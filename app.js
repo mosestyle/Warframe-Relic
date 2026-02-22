@@ -1,16 +1,8 @@
 let RELICS = [];
-let PRICES = {}; // key: item display name -> plat integer
+let PRICES = {};
+let RELIC_NAMES = [];
 
-const rarityToLabel = (r) => {
-  if (typeof r === "number") return ["Common","Uncommon","Rare"][r] ?? String(r);
-  const s = String(r).toLowerCase();
-  if (s.includes("common")) return "Common";
-  if (s.includes("uncommon")) return "Uncommon";
-  if (s.includes("rare")) return "Rare";
-  return String(r);
-};
-
-function norm(s){ return (s||"").trim().toLowerCase(); }
+const state = { r1: null, r2: null, r3: null, r4: null };
 
 function relicDisplayName(relicObj){
   const era = relicObj.era ?? relicObj.tier ?? "";
@@ -18,47 +10,43 @@ function relicDisplayName(relicObj){
   return `${era} ${name}`.trim().replace(/\s+/g, " ");
 }
 
-function getRelicByDisplay(display){
-  const n = norm(display);
-  return RELICS.find(r => norm(relicDisplayName(r)) === n) || null;
-}
+function setStatus(msg){ document.getElementById("status").textContent = msg || ""; }
 
 function platForItem(itemName){
   const v = PRICES[itemName];
   return (typeof v === "number") ? v : null;
 }
 
-function setStatus(msg){
-  document.getElementById("status").textContent = msg || "";
+function rarityToLabel(r){
+  if (typeof r === "number") return ["Common","Uncommon","Rare"][r] ?? String(r);
+  const s = String(r).toLowerCase();
+  if (s.includes("common")) return "Common";
+  if (s.includes("uncommon")) return "Uncommon";
+  if (s.includes("rare")) return "Rare";
+  return String(r);
 }
 
-function renderRows(relicsPicked){
-  const rowsEl = document.getElementById("rows");
-  rowsEl.innerHTML = "";
+function renderCards(relicsPicked){
+  const cardsEl = document.getElementById("cards");
+  cardsEl.innerHTML = "";
 
   const all = [];
   for (const r of relicsPicked){
-    const drops = r.drops ?? r.rewards ?? [];
+    const drops = r.drops ?? [];
     for (const d of drops){
-      const item = d.item ?? d.name ?? d.reward ?? "Unknown";
-      const rarity = d.rarity ?? d.tier ?? d.chance ?? "";
+      const item = d.item ?? "Unknown";
+      const rarity = rarityToLabel(d.rarity ?? "");
       const plat = platForItem(item);
-      all.push({
-        item,
-        from: relicDisplayName(r),
-        rarity: rarityToLabel(rarity),
-        plat: plat ?? -1
-      });
+      all.push({ item, from: relicDisplayName(r), rarity, plat: plat ?? -1 });
     }
   }
 
   // Merge duplicates
   const merged = new Map();
   for (const e of all){
-    const key = e.item;
-    const prev = merged.get(key);
+    const prev = merged.get(e.item);
     if (!prev){
-      merged.set(key, { ...e, fromSet: new Set([e.from]) });
+      merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
     } else {
       prev.fromSet.add(e.from);
       prev.plat = Math.max(prev.plat, e.plat);
@@ -72,26 +60,85 @@ function renderRows(relicsPicked){
     plat: x.plat
   }));
 
-  final.sort((a,b) => (b.plat - a.plat));
+  final.sort((a,b) => b.plat - a.plat);
 
   for (const e of final){
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${e.item}</td>
-      <td class="muted">${e.from}</td>
-      <td class="muted">${e.rarity}</td>
-      <td class="num">${e.plat >= 0 ? e.plat : "?"}</td>
+    const div = document.createElement("div");
+    div.className = "cardRow";
+    div.innerHTML = `
+      <div class="cardLeft">
+        <div class="itemName">${e.item}</div>
+        <div class="itemMeta">
+          <span class="badge">${e.rarity}</span>
+          <span>${e.from}</span>
+        </div>
+      </div>
+      <div class="cardRight">
+        <div class="platNum">${e.plat >= 0 ? e.plat : "?"}</div>
+        <div class="platLbl">Plat</div>
+      </div>
     `;
-    rowsEl.appendChild(tr);
+    cardsEl.appendChild(div);
   }
 
   setStatus(`Showing ${final.length} unique rewards`);
 }
 
+// -------- Modal picker ----------
+const modal = document.getElementById("modal");
+const modalTitle = document.getElementById("modalTitle");
+const modalSearch = document.getElementById("modalSearch");
+const modalList = document.getElementById("modalList");
+let modalTarget = null;
+
+function openModal(targetKey){
+  modalTarget = targetKey;
+  modal.classList.remove("hidden");
+  modalTitle.textContent = `Choose relic (${targetKey.toUpperCase()})`;
+  modalSearch.value = "";
+  renderModalList("");
+  setTimeout(() => modalSearch.focus(), 50);
+}
+
+function closeModal(){
+  modal.classList.add("hidden");
+  modalTarget = null;
+}
+
+function renderModalList(filter){
+  const q = (filter || "").trim().toLowerCase();
+  modalList.innerHTML = "";
+
+  const list = q
+    ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 400)
+    : RELIC_NAMES.slice(0, 400);
+
+  for (const name of list){
+    const item = document.createElement("div");
+    item.className = "modalItem";
+    item.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
+    item.addEventListener("click", () => {
+      state[modalTarget] = name;
+      document.getElementById(`${modalTarget}Text`).textContent = name;
+      document.getElementById(`${modalTarget}Text`).classList.remove("pickerPlaceholder");
+      closeModal();
+    });
+    modalList.appendChild(item);
+  }
+}
+
+document.getElementById("modalClose").addEventListener("click", closeModal);
+modalSearch.addEventListener("input", () => renderModalList(modalSearch.value));
+
+// Bind the 4 picker buttons
+document.querySelectorAll(".pickerBtn").forEach(btn => {
+  btn.addEventListener("click", () => openModal(btn.dataset.target));
+});
+
+// -------- Boot ----------
 async function boot(){
   setStatus("Loading data…");
 
-  // These files will be generated by the GitHub Action at deploy-time
   const [relicRes, priceRes] = await Promise.all([
     fetch("./data/Relics.min.json", { cache: "no-store" }),
     fetch("./data/prices.json", { cache: "no-store" })
@@ -100,14 +147,7 @@ async function boot(){
   RELICS = await relicRes.json();
   PRICES = await priceRes.json();
 
-  const dl = document.getElementById("relicsList");
-  dl.innerHTML = "";
-  const names = RELICS.map(relicDisplayName).sort((a,b)=>a.localeCompare(b));
-  for (const n of names){
-    const opt = document.createElement("option");
-    opt.value = n;
-    dl.appendChild(opt);
-  }
+  RELIC_NAMES = RELICS.map(relicDisplayName).sort((a,b)=>a.localeCompare(b));
 
   document.getElementById("footer").textContent =
     `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
@@ -116,23 +156,31 @@ async function boot(){
 }
 
 document.getElementById("btnShow").addEventListener("click", () => {
-  const picks = ["r1","r2","r3","r4"].map(id => document.getElementById(id).value);
-  const relics = picks.map(getRelicByDisplay).filter(Boolean);
-
-  if (relics.length === 0){
-    setStatus("Pick at least 1 valid relic");
+  const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
+  if (picks.length === 0){
+    setStatus("Pick at least 1 relic");
     return;
   }
-  renderRows(relics);
+
+  const relicsPicked = picks
+    .map(name => RELICS.find(r => relicDisplayName(r) === name))
+    .filter(Boolean);
+
+  renderCards(relicsPicked);
 });
 
 document.getElementById("btnClear").addEventListener("click", () => {
-  ["r1","r2","r3","r4"].forEach(id => document.getElementById(id).value = "");
-  document.getElementById("rows").innerHTML = "";
+  state.r1 = state.r2 = state.r3 = state.r4 = null;
+  ["r1","r2","r3","r4"].forEach(k => {
+    const el = document.getElementById(`${k}Text`);
+    el.textContent = "Tap to choose";
+    el.classList.add("pickerPlaceholder");
+  });
+  document.getElementById("cards").innerHTML = "";
   setStatus("Cleared");
 });
 
 boot().catch(err => {
   console.error(err);
-  setStatus("Failed to load data (wait for first deploy to finish)");
+  setStatus("Failed to load data (run GitHub Action once)");
 });

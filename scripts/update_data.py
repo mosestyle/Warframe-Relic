@@ -1,79 +1,103 @@
-import json, time, urllib.request
+import json
+import time
+import urllib.request
 from pathlib import Path
 
 DATA_DIR = Path("data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/data/Relics.min.json"
-WM_STATS_URL = "https://api.warframe.market/v1/items/{}/statistics"
+WM_ITEMS_URL = "https://api.warframe.market/v1/items"
+WM_ORDERS_URL = "https://api.warframe.market/v1/items/{}/orders"
 
-def get_json(url, headers=None):
-    req = urllib.request.Request(url, headers=headers or {})
+HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "mosestyle-warframe-relic-sorter (github actions)"
+}
+
+def get_json(url):
+    req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=60) as r:
         return json.loads(r.read().decode("utf-8"))
 
-def slugify_item_name(display_name: str) -> str:
-    s = display_name.lower()
-    s = s.replace("’","").replace("'","")
-    s = s.replace("-", " ").strip()
-    s = " ".join(s.split())
-    return s.replace(" ", "_")
-
 def main():
     print("Downloading relics…")
-    relics = get_json(RELICS_URL, headers={"User-Agent": "relic-sorter-github-action"})
+    relics = get_json(RELICS_URL)
     (DATA_DIR / "Relics.min.json").write_text(json.dumps(relics), encoding="utf-8")
 
-    items = set()
-    for r in relics:
-        drops = r.get("drops") or r.get("rewards") or []
-        for d in drops:
-            name = d.get("item") or d.get("name") or d.get("reward")
-            if name:
-                items.add(name)
+    print("Downloading warframe.market items list (name->url_name map)…")
+    items_list = get_json(WM_ITEMS_URL)
+    # payload.items.en is commonly used
+    en_items = (items_list.get("payload", {}).get("items", {}).get("en", []) or [])
 
-    items = sorted(items)
-    print(f"Unique items: {len(items)}")
+    name_to_url = {}
+    for it in en_items:
+        name = it.get("item_name")
+        url = it.get("url_name")
+        if name and url:
+            name_to_url[name] = url
+
+    print(f"Market items mapped: {len(name_to_url)}")
+
+    # Collect unique drops from relics
+    drop_names = set()
+    for r in relics:
+        drops = r.get("drops") or []
+        for d in drops:
+            nm = d.get("item")
+            if nm:
+                drop_names.add(nm)
+
+    drop_names = sorted(drop_names)
+    print(f"Unique relic drops: {len(drop_names)}")
 
     prices = {}
-    for i, name in enumerate(items, start=1):
-        url_name = slugify_item_name(name)
-        url = WM_STATS_URL.format(url_name)
+    misses = 0
+
+    # Rate limit: be gentle
+    for i, name in enumerate(drop_names, start=1):
+        url_name = name_to_url.get(name)
+        if not url_name:
+            misses += 1
+            continue
 
         try:
-            js = get_json(url, headers={"Accept": "application/json", "User-Agent": "relic-sorter-github-action"})
-            payload = js.get("payload", {})
-            stats = payload.get("statistics", {})
+            orders_json = get_json(WM_ORDERS_URL.format(url_name))
+            orders = orders_json.get("payload", {}).get("orders", []) or []
 
-            # We’ll default to PC stats because warframe.market pricing is most complete there.
-            # If you later want console-only, we can change this.
-            pc = stats.get("pc") or stats.get("PC") or []
+            # filter: visible + platform pc + ingame users (avoid offline spam)
+            filt = []
+            for o in orders:
+                if not o.get("visible"):
+                    continue
+                if o.get("platform") != "pc":
+                    continue
+                user = o.get("user") or {}
+                if user.get("status") not in ("ingame", "online"):
+                    continue
+                filt.append(o)
 
-            plat = None
-            if pc:
-                # Scan newest-ish entries and pick a median/avg style number
-                for entry in reversed(pc):
-                    for k in ("median", "avg_price", "average", "min_price", "max_price"):
-                        v = entry.get(k)
-                        if isinstance(v, (int, float)):
-                            plat = float(v)
-                            break
-                    if plat is not None:
-                        break
+            sells = [o["platinum"] for o in filt if o.get("order_type") == "sell" and isinstance(o.get("platinum"), (int, float))]
+            buys  = [o["platinum"] for o in filt if o.get("order_type") == "buy"  and isinstance(o.get("platinum"), (int, float))]
 
-            if plat is not None:
-                prices[name] = int(round(plat))
+            # Choose ONE pricing rule. This one is "lowest sell" (common for quick compare).
+            # If you prefer "highest buy", swap to: price = max(buys) if buys else None
+            price = min(sells) if sells else None
+
+            if price is not None:
+                prices[name] = int(round(price))
 
         except Exception:
-            # item not found / endpoint mismatch / temporary issues -> skip
+            # skip on any network/API error
             pass
 
         if i % 50 == 0:
-            print(f"Processed {i}/{len(items)}")
-            time.sleep(1.0)
+            print(f"Processed {i}/{len(drop_names)}")
+            time.sleep(0.6)
 
     (DATA_DIR / "prices.json").write_text(json.dumps(prices, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Saved prices for: {len(prices)} items")
+    print(f"Name->url misses: {misses}")
 
 if __name__ == "__main__":
     main()
