@@ -2,6 +2,8 @@ name: Build data and deploy to GitHub Pages
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 20 * * 1"   # Every Monday 20:00 UTC (≈21:00 Sweden winter, ≈22:00 Sweden summer)
 
 permissions:
   contents: read
