@@ -1,12 +1,14 @@
+// app.js — Modal picker UI + prices from data/prices.json ONLY.
+// No caching, no client-side price fetching.
+
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
-let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
-const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
+const norm = (s) => (s || "").trim();
 
 function setStatus(msg) {
   const el = $("status");
@@ -29,15 +31,17 @@ function rarityToLabel(r) {
   return String(r ?? "");
 }
 
-// Natural relic sorting: A1, A2, ... A10
+// ---------------- Natural relic sorting ----------------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
+  // "Axi A20" -> { era:"Axi", code:"A20", letters:"A", num:20, tail:"" }
   const s = (str || "").trim().replace(/\s+/g, " ");
   const m = s.match(/^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$/);
-  if (!m) return { era: "", letters: s, num: 0, tail: "" };
+  if (!m) return { era: "", code: s, letters: s, num: 0, tail: "" };
   return {
     era: m[1],
+    code: `${m[2]}${m[3]}${m[4] || ""}`,
     letters: m[2],
     num: parseInt(m[3], 10) || 0,
     tail: m[4] || ""
@@ -52,35 +56,53 @@ function relicNaturalCompare(a, b) {
   const eraB = ERA_ORDER[B.era] ?? 99;
   if (eraA !== eraB) return eraA - eraB;
 
+  // Compare letters (A/B/C…)
   const lc = A.letters.localeCompare(B.letters, undefined, { sensitivity: "base" });
   if (lc !== 0) return lc;
 
+  // Compare numeric portion naturally
   if (A.num !== B.num) return A.num - B.num;
 
+  // Compare tail (rare cases)
   const tc = A.tail.localeCompare(B.tail, undefined, { sensitivity: "base" });
   if (tc !== 0) return tc;
 
+  // Final fallback
   return a.localeCompare(b);
 }
 
-// Modal
+// ---------------- Modal picker ----------------
 let modalTarget = null;
 
 function openModal(targetKey) {
+  const modal = $("modal");
+  if (!modal) return;
+
   modalTarget = targetKey;
-  $("modalSearch").value = "";
+
+  const title = $("modalTitle");
+  if (title) title.textContent = "Choose relic";
+
+  const search = $("modalSearch");
+  if (search) search.value = "";
+
   renderModalList("");
-  $("modal").classList.remove("hidden");
-  setTimeout(() => $("modalSearch")?.focus(), 60);
+
+  modal.classList.remove("hidden");
+  setTimeout(() => search?.focus(), 60);
 }
 
 function closeModal() {
-  $("modal").classList.add("hidden");
+  const modal = $("modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
   modalTarget = null;
 }
 
 function renderModalList(filter) {
   const listEl = $("modalList");
+  if (!listEl) return;
+
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
@@ -94,6 +116,7 @@ function renderModalList(filter) {
     row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
     row.addEventListener("click", () => {
       if (!modalTarget) return;
+
       state[modalTarget] = name;
 
       const tEl = $(`${modalTarget}Text`);
@@ -101,13 +124,14 @@ function renderModalList(filter) {
         tEl.textContent = name;
         tEl.classList.remove("pickerPlaceholder");
       }
+
       closeModal();
     });
     listEl.appendChild(row);
   }
 }
 
-// Rewards
+// ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
 
@@ -150,6 +174,8 @@ function mergeAndSortRewards(relicsPicked) {
 
 function renderCards(list) {
   const cardsEl = $("cards");
+  if (!cardsEl) return;
+
   cardsEl.innerHTML = "";
   for (const e of list) {
     const div = document.createElement("div");
@@ -195,13 +221,7 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-function setFooter() {
-  const footer = $("footer");
-  const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
-  const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
-  footer.innerHTML = `<span>${left}</span><span>${right}</span>`;
-}
-
+// ---------------- Boot ----------------
 async function boot() {
   setStatus("Loading…");
 
@@ -215,37 +235,31 @@ async function boot() {
     PRICES = {};
   }
 
-  try {
-    const metaRes = await fetch("./data/meta.json", { cache: "no-store" });
-    META = await metaRes.json();
-  } catch {
-    META = null;
-  }
-
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
-  setFooter();
 
-  $("modalClose").addEventListener("click", closeModal);
-  $("modalSearch").addEventListener("input", (e) => renderModalList(e.target.value));
+  const footer = $("footer");
+  if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+
+  $("modalClose")?.addEventListener("click", closeModal);
+  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
   });
 
-  $("btnShow").addEventListener("click", showRewards);
-
-  $("btnClear").addEventListener("click", () => {
+  $("btnShow")?.addEventListener("click", showRewards);
+  $("btnClear")?.addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
 
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
       const el = $(id);
       if (el) {
-        el.textContent = PICKER_DEFAULT;
+        el.textContent = "Tap to choose";
         el.classList.add("pickerPlaceholder");
       }
     });
 
-    $("cards").innerHTML = "";
+    $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
 
