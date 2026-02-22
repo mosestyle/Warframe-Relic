@@ -22,18 +22,21 @@ RELICS_VAULT_MAP_URL = (
 )
 
 # -------------------- Warframe.market endpoints --------------------
+# Use ONLY statistics endpoint (orders endpoint can 403 from GitHub Actions IPs)
 WM_BASE = "https://api.warframe.market/v1"
 WM_ITEM_STATS = f"{WM_BASE}/items/{{url_name}}/statistics"
-WM_ITEM_ORDERS = f"{WM_BASE}/items/{{url_name}}/orders"
 
-UA = "mosestyle-warframe-relic/2.3 (+github pages actions)"
+UA = "mosestyle-warframe-relic/2.4 (+github pages actions)"
 
 WM_PLATFORM = "pc"
 WM_LANGUAGE = "en"
 
-# Throttling
+# Throttling (be gentle in GitHub Actions)
 SLEEP_BETWEEN_WM_CALLS = 0.40  # ~2.5 req/sec
 HTTP_TIMEOUT = 60
+
+# Relic sorting in output file (UI can still do its own sorting)
+TIER_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3}
 
 
 def ensure_data_dir():
@@ -55,9 +58,12 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
                     "Accept": "application/json,text/plain,*/*",
                     "Accept-Language": "en-US,en;q=0.9",
                     "Connection": "close",
-                    # WM headers (harmless for other endpoints)
+                    # WM headers (harmless for WFCD endpoints)
                     "Platform": WM_PLATFORM,
                     "Language": WM_LANGUAGE,
+                    # Sometimes helps with strict WAFs (doesn't hurt):
+                    "Referer": "https://warframe.market/",
+                    "Origin": "https://warframe.market",
                 },
             )
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -81,9 +87,6 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
 
 
 # -------------------- Relics parsing --------------------
-
-TIER_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3}
-
 
 def build_vaulted_map() -> Dict[str, bool]:
     """
@@ -220,108 +223,76 @@ def guess_wm_url_name(item_name: str) -> str:
     return s
 
 
+# If you find a mismatch, put it here:
 WM_URL_OVERRIDES: Dict[str, str] = {
-    # If you find a mismatch, put it here:
     # "Kompressa Prime Receiver": "kompressa_prime_receiver",
 }
 
 
-def wm_90day_median(url_name: str) -> Optional[int]:
+def _median_from_stats_section(stats_section: Any, window_key: str) -> Optional[int]:
     """
-    Returns most recent 90-day median from statistics_closed['90days'].
+    stats_section = payload['statistics_closed'] or payload['statistics_open']
+    window_key: '90days' or '48hours'
     """
-    url = WM_ITEM_STATS.format(url_name=urllib.parse.quote(url_name))
+    if not isinstance(stats_section, dict):
+        return None
+    arr = stats_section.get(window_key) or []
+    if not isinstance(arr, list) or not arr:
+        return None
+    last = arr[-1]
+    if not isinstance(last, dict):
+        return None
+    med = last.get("median")
+    if med is None:
+        return None
     try:
-        payload = http_json(url)
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        raise
-
-    try:
-        stats_closed = payload["payload"]["statistics_closed"]
-        arr_90 = stats_closed.get("90days") or []
-        if not arr_90:
-            return None
-        last = arr_90[-1]
-        med = last.get("median")
-        if med is None:
-            return None
         return int(round(float(med)))
     except Exception:
         return None
 
 
-def wm_orders_fallback_median(url_name: str, sample_lowest_n: int = 30) -> Optional[int]:
+def wm_price_from_statistics(url_name: str) -> Optional[int]:
     """
-    Fallback pricing when 90d median is missing:
-    - Fetch sell orders
-    - Take the lowest N prices
-    - Return median of those (robust against 1-2 troll listings)
+    Primary: statistics_closed 90days median
+    Fallback 1: statistics_open 90days median
+    Fallback 2: statistics_closed 48hours median
+    Fallback 3: statistics_open 48hours median
     """
-    url = WM_ITEM_ORDERS.format(url_name=urllib.parse.quote(url_name))
+    url = WM_ITEM_STATS.format(url_name=urllib.parse.quote(url_name))
     try:
         payload = http_json(url)
     except urllib.error.HTTPError as e:
-        if e.code == 404:
+        if e.code in (404, 403):
             return None
         raise
 
     try:
-        orders = payload.get("payload", {}).get("orders", [])
-        if not isinstance(orders, list) or not orders:
-            return None
+        p = payload.get("payload", {})
+        closed = p.get("statistics_closed")
+        open_ = p.get("statistics_open")
 
-        prices: List[float] = []
-        for o in orders:
-            if not isinstance(o, dict):
-                continue
-            if o.get("order_type") != "sell":
-                continue
-            if o.get("visible") is False:
-                continue
+        v = _median_from_stats_section(closed, "90days")
+        if v is not None:
+            return v
 
-            plat = o.get("platinum")
-            try:
-                plat_f = float(plat)
-            except Exception:
-                continue
-            if plat_f <= 0:
-                continue
+        v = _median_from_stats_section(open_, "90days")
+        if v is not None:
+            return v
 
-            prices.append(plat_f)
+        v = _median_from_stats_section(closed, "48hours")
+        if v is not None:
+            return v
 
-        if not prices:
-            return None
+        v = _median_from_stats_section(open_, "48hours")
+        if v is not None:
+            return v
 
-        prices.sort()
-        subset = prices[: max(1, min(sample_lowest_n, len(prices)))]
-
-        # median of subset
-        m = len(subset)
-        mid = m // 2
-        if m % 2 == 1:
-            med = subset[mid]
-        else:
-            med = (subset[mid - 1] + subset[mid]) / 2.0
-
-        return int(round(med))
+        return None
     except Exception:
         return None
 
 
-def wm_price_robust(url_name: str) -> Optional[int]:
-    """
-    Primary: 90-day closed median
-    Fallback: median of lowest sell orders
-    """
-    med90 = wm_90day_median(url_name)
-    if med90 is not None:
-        return med90
-    return wm_orders_fallback_median(url_name, sample_lowest_n=30)
-
-
-def build_prices_from_wm_robust(relics_min: List[Dict[str, Any]]) -> Dict[str, int]:
+def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Dict[str, int]:
     reward_items = unique_reward_items(relics_min)
     print(f"Unique reward items to price: {len(reward_items)}")
 
@@ -332,7 +303,7 @@ def build_prices_from_wm_robust(relics_min: List[Dict[str, Any]]) -> Dict[str, i
         url_name = WM_URL_OVERRIDES.get(item_name) or guess_wm_url_name(item_name)
 
         try:
-            v = wm_price_robust(url_name)
+            v = wm_price_from_statistics(url_name)
         except urllib.error.HTTPError as e:
             if e.code in (429, 500, 502, 503, 504):
                 missing += 1
@@ -360,13 +331,14 @@ def build_prices_from_wm_robust(relics_min: List[Dict[str, Any]]) -> Dict[str, i
 def main():
     relics_min = build_relics_min()
 
-    prices = build_prices_from_wm_robust(relics_min)
+    prices = build_prices_from_wm_statistics(relics_min)
 
     ensure_data_dir()
     with open(PRICES_OUT, "w", encoding="utf-8") as f:
         json.dump(prices, f, ensure_ascii=False, separators=(",", ":"))
     print(f"Prices written: {len(prices)} -> {PRICES_OUT}")
 
+    # Safety: if something went wrong and we priced almost nothing, fail the workflow
     if len(prices) < 25:
         raise RuntimeError(
             f"Too few prices ({len(prices)}). warframe.market calls may be failing, or endpoint changed."
