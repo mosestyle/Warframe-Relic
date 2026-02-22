@@ -12,6 +12,9 @@ DATA_DIR = "data"
 RELICS_OUT = os.path.join(DATA_DIR, "Relics.min.json")
 PRICES_OUT = os.path.join(DATA_DIR, "prices.json")
 
+MISSING_TXT = os.path.join(DATA_DIR, "missing_prices.txt")
+MISSING_JSON = os.path.join(DATA_DIR, "missing_prices.json")
+
 # -------------------- Relics sources --------------------
 # FULL relic rewards (includes vaulted + old relics) from WFCD warframe-drop-data
 RELICS_ALL_URL = "https://raw.githubusercontent.com/WFCD/warframe-drop-data/master/data/relics.json"
@@ -26,16 +29,15 @@ RELICS_VAULT_MAP_URL = (
 WM_BASE = "https://api.warframe.market/v1"
 WM_ITEM_STATS = f"{WM_BASE}/items/{{url_name}}/statistics"
 
-UA = "mosestyle-warframe-relic/2.4 (+github pages actions)"
+UA = "mosestyle-warframe-relic/2.5 (+github pages actions)"
 
 WM_PLATFORM = "pc"
 WM_LANGUAGE = "en"
 
-# Throttling (be gentle in GitHub Actions)
+# Throttling
 SLEEP_BETWEEN_WM_CALLS = 0.40  # ~2.5 req/sec
 HTTP_TIMEOUT = 60
 
-# Relic sorting in output file (UI can still do its own sorting)
 TIER_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3}
 
 
@@ -61,7 +63,7 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
                     # WM headers (harmless for WFCD endpoints)
                     "Platform": WM_PLATFORM,
                     "Language": WM_LANGUAGE,
-                    # Sometimes helps with strict WAFs (doesn't hurt):
+                    # Helps with some WAF rules (doesn't hurt):
                     "Referer": "https://warframe.market/",
                     "Origin": "https://warframe.market",
                 },
@@ -223,10 +225,38 @@ def guess_wm_url_name(item_name: str) -> str:
     return s
 
 
-# If you find a mismatch, put it here:
+# Manual overrides (keep empty; Option B auto-candidates handles most issues)
 WM_URL_OVERRIDES: Dict[str, str] = {
-    # "Kompressa Prime Receiver": "kompressa_prime_receiver",
+    # You can still pin special cases here if you want:
+    # "Kompressa Prime Receiver": "kompressa_prime_reciever",
 }
+
+
+def wm_url_candidates(item_name: str) -> List[str]:
+    """
+    Generate possible WM url_name candidates.
+    This is how we fix cases like:
+      receiver -> reciever  (known WM typo on some items)
+    """
+    base = WM_URL_OVERRIDES.get(item_name) or guess_wm_url_name(item_name)
+    cands = [base]
+
+    # Known WM typo: receiver -> reciever
+    if base.endswith("_receiver"):
+        cands.append(base[:-len("_receiver")] + "_reciever")
+
+    # Also handle receiver in the middle (rare)
+    if "_receiver_" in base:
+        cands.append(base.replace("_receiver_", "_reciever_"))
+
+    # De-dupe preserving order
+    seen = set()
+    out = []
+    for c in cands:
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
 
 
 def _median_from_stats_section(stats_section: Any, window_key: str) -> Optional[int]:
@@ -292,38 +322,59 @@ def wm_price_from_statistics(url_name: str) -> Optional[int]:
         return None
 
 
-def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Dict[str, int]:
+def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Tuple[Dict[str, int], List[str]]:
     reward_items = unique_reward_items(relics_min)
     print(f"Unique reward items to price: {len(reward_items)}")
 
     prices: Dict[str, int] = {}
-    missing = 0
+    missing_items: List[str] = []
 
     for i, item_name in enumerate(reward_items, start=1):
-        url_name = WM_URL_OVERRIDES.get(item_name) or guess_wm_url_name(item_name)
+        v: Optional[int] = None
 
-        try:
-            v = wm_price_from_statistics(url_name)
-        except urllib.error.HTTPError as e:
-            if e.code in (429, 500, 502, 503, 504):
-                missing += 1
-                time.sleep(1.25)
-                v = None
-            else:
+        # Try candidate slugs until one returns a price
+        for url_name in wm_url_candidates(item_name):
+            try:
+                v = wm_price_from_statistics(url_name)
+            except urllib.error.HTTPError as e:
+                if e.code in (429, 500, 502, 503, 504):
+                    # transient — wait a bit and give up on this item for now
+                    time.sleep(1.25)
+                    v = None
+                    break
                 raise
 
+            if v is not None:
+                break
+
         if v is None:
-            missing += 1
+            missing_items.append(item_name)
         else:
             prices[item_name] = v
 
         if i % 25 == 0:
-            print(f"  {i}/{len(reward_items)} priced={len(prices)} (missing={missing})")
+            print(f"  {i}/{len(reward_items)} priced={len(prices)} missing={len(missing_items)}")
 
         time.sleep(SLEEP_BETWEEN_WM_CALLS)
 
-    print(f"WM pricing done: {len(prices)}/{len(reward_items)} priced. Missing={missing}")
-    return prices
+    print(f"WM pricing done: {len(prices)}/{len(reward_items)} priced. Missing={len(missing_items)}")
+    return prices, missing_items
+
+
+def write_missing_debug(missing_items: List[str]) -> None:
+    ensure_data_dir()
+
+    # Text file for quick eyeballing
+    missing_sorted = sorted(set(missing_items))
+    with open(MISSING_TXT, "w", encoding="utf-8") as f:
+        for name in missing_sorted:
+            f.write(name + "\n")
+
+    # JSON for future tooling
+    with open(MISSING_JSON, "w", encoding="utf-8") as f:
+        json.dump(missing_sorted, f, ensure_ascii=False, indent=2)
+
+    print(f"Missing prices written: {len(missing_sorted)} -> {MISSING_TXT} (+ {MISSING_JSON})")
 
 
 # -------------------- Main --------------------
@@ -331,12 +382,14 @@ def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Dict[st
 def main():
     relics_min = build_relics_min()
 
-    prices = build_prices_from_wm_statistics(relics_min)
+    prices, missing_items = build_prices_from_wm_statistics(relics_min)
 
     ensure_data_dir()
     with open(PRICES_OUT, "w", encoding="utf-8") as f:
         json.dump(prices, f, ensure_ascii=False, separators=(",", ":"))
     print(f"Prices written: {len(prices)} -> {PRICES_OUT}")
+
+    write_missing_debug(missing_items)
 
     # Safety: if something went wrong and we priced almost nothing, fail the workflow
     if len(prices) < 25:
