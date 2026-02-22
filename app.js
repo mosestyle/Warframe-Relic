@@ -1,234 +1,117 @@
-// Universal app.js (works with your current UI) + client-side Platinum fetching + caching
+// app.js — Modal picker UI + prices from data/prices.json ONLY.
+// No caching, no client-side price fetching.
 
 let RELICS = [];
-let PRICES = {};              // Loaded from ./data/prices.json if present
+let PRICES = {};
 let RELIC_NAMES = [];
+
 const state = { r1: null, r2: null, r3: null, r4: null };
 
-// In-memory cache for this session
-const priceCache = new Map();
-
-// Persisted cache key (phone browser)
-const PRICE_CACHE_KEY = "wf_relic_price_cache_v1";
-
-function $(id) { return document.getElementById(id); }
-function norm(s) { return (s || "").trim(); }
+const $ = (id) => document.getElementById(id);
+const norm = (s) => (s || "").trim();
 
 function setStatus(msg) {
   const el = $("status");
   if (el) el.textContent = msg || "";
 }
 
-function relicDisplayName(relicObj) {
-  const era = relicObj.era ?? relicObj.tier ?? "";
-  const name = relicObj.name ?? relicObj.relicName ?? relicObj.code ?? "";
+function relicDisplayName(r) {
+  const era = r.era ?? r.tier ?? "";
+  const name = r.name ?? r.relicName ?? r.code ?? "";
   return `${era} ${name}`.trim().replace(/\s+/g, " ");
 }
 
+function platForItem(itemName) {
+  const v = PRICES[itemName];
+  return (typeof v === "number") ? v : null;
+}
+
 function rarityToLabel(r) {
-  // Your relic JSON may include probabilities (0.02 etc) or rarity strings.
-  if (typeof r === "number") return String(r); // keep chance as-is (your UI shows 0.25 etc)
-  const s = String(r ?? "").toLowerCase();
-  if (s.includes("rare")) return "Rare";
-  if (s.includes("uncommon")) return "Uncommon";
-  if (s.includes("common")) return "Common";
+  // Your UI was showing numbers like 0.25 — keep that
+  if (typeof r === "number") return String(r);
   return String(r ?? "");
 }
 
-function platForItem(itemName) {
-  // 1) session cache
-  if (priceCache.has(itemName)) return priceCache.get(itemName);
+// ---------------- Modal picker ----------------
+let modalTarget = null;
 
-  // 2) prices.json preloaded
-  const v = PRICES[itemName];
-  if (typeof v === "number") {
-    priceCache.set(itemName, v);
-    return v;
-  }
+function openModal(targetKey) {
+  const modal = $("modal");
+  if (!modal) return;
 
-  // 3) localStorage cache
-  const stored = loadPriceCacheFromStorage();
-  if (stored && typeof stored[itemName] === "number") {
-    priceCache.set(itemName, stored[itemName]);
-    return stored[itemName];
-  }
+  modalTarget = targetKey;
 
-  return null;
+  const title = $("modalTitle");
+  if (title) title.textContent = "Choose relic";
+
+  const search = $("modalSearch");
+  if (search) search.value = "";
+
+  renderModalList("");
+
+  modal.classList.remove("hidden");
+  setTimeout(() => search?.focus(), 60);
 }
 
-// ---------- Price fetching (client-side) ----------
-
-function toUrlName(itemName) {
-  // Best-effort warframe.market url_name
-  // Example: "Hydroid Prime Neuroptics Blueprint" -> "hydroid_prime_neuroptics_blueprint"
-  let s = itemName.trim().toLowerCase();
-  s = s.replace(/’/g, "'").replace(/&/g, "and");
-  s = s.replace(/['"]/g, " ");       // remove quotes/apostrophes
-  s = s.replace(/-/g, " ");
-  s = s.replace(/[^a-z0-9 _]/g, " "); // keep only letters/numbers/spaces/underscore
-  s = s.replace(/\s+/g, "_");
-  s = s.replace(/_+/g, "_");
-  s = s.replace(/^_+|_+$/g, "");
-  return s;
+function closeModal() {
+  const modal = $("modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modalTarget = null;
 }
 
-async function fetchLowestSellPlat(itemName) {
-  // If already cached, return immediately
-  const cached = platForItem(itemName);
-  if (typeof cached === "number") return cached;
+function renderModalList(filter) {
+  const listEl = $("modalList");
+  if (!listEl) return;
 
-  const urlName = toUrlName(itemName);
-  const url = `https://api.warframe.market/v1/items/${urlName}/orders`;
+  const q = (filter || "").toLowerCase().trim();
+  listEl.innerHTML = "";
 
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-        "Platform": "pc",
-        "Language": "en"
+  const list = q
+    ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 800)
+    : RELIC_NAMES.slice(0, 800);
+
+  for (const name of list) {
+    const row = document.createElement("div");
+    row.className = "modalItem";
+    row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
+    row.addEventListener("click", () => {
+      if (!modalTarget) return;
+
+      state[modalTarget] = name;
+
+      const tEl = $(`${modalTarget}Text`);
+      if (tEl) {
+        tEl.textContent = name;
+        tEl.classList.remove("pickerPlaceholder");
       }
+
+      closeModal();
     });
-
-    if (!res.ok) return null; // 404 etc -> null
-
-    const js = await res.json();
-    const orders = js?.payload?.orders ?? [];
-
-    // lowest sell from visible pc orders where user is online/ingame
-    const sells = [];
-    for (const o of orders) {
-      if (!o?.visible) continue;
-      if (o?.platform !== "pc") continue;
-      if (o?.order_type !== "sell") continue;
-      const user = o?.user ?? {};
-      if (!["online", "ingame"].includes(user.status)) continue;
-      const p = o?.platinum;
-      if (typeof p === "number") sells.push(p);
-    }
-
-    if (!sells.length) return null;
-
-    const price = Math.min(...sells);
-    return Math.round(price);
-  } catch {
-    return null;
+    listEl.appendChild(row);
   }
 }
 
-function loadPriceCacheFromStorage() {
-  try {
-    const raw = localStorage.getItem(PRICE_CACHE_KEY);
-    if (!raw) return null;
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === "object") return obj;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function savePriceToStorage(itemName, plat) {
-  try {
-    const obj = loadPriceCacheFromStorage() || {};
-    obj[itemName] = plat;
-    localStorage.setItem(PRICE_CACHE_KEY, JSON.stringify(obj));
-  } catch {
-    // ignore
-  }
-}
-
-async function fetchPricesForRewards(rewardList, maxToFetch = 40) {
-  // Fetch prices only for items that are missing
-  const missing = rewardList
-    .filter(r => !(typeof r.plat === "number" && r.plat >= 0))
-    .map(r => r.item);
-
-  const uniqueMissing = [...new Set(missing)].slice(0, maxToFetch);
-  if (!uniqueMissing.length) return 0;
-
-  setStatus(`Fetching prices… (${uniqueMissing.length})`);
-
-  // Limit concurrency so we don't spam the API
-  const CONCURRENCY = 6;
-  let idx = 0;
-  let updated = 0;
-
-  async function worker() {
-    while (idx < uniqueMissing.length) {
-      const myIndex = idx++;
-      const itemName = uniqueMissing[myIndex];
-
-      const p = await fetchLowestSellPlat(itemName);
-      if (typeof p === "number") {
-        priceCache.set(itemName, p);
-        savePriceToStorage(itemName, p);
-        updated++;
-      }
-    }
-  }
-
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-  return updated;
-}
-
-// ---------- Selection + reward merging ----------
-
-function pickSelectedRelicNames() {
-  const picks = [];
-
-  // Modal UI text spans (if present)
-  ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
-    const el = $(id);
-    if (el) {
-      const t = norm(el.textContent);
-      if (t && !t.toLowerCase().includes("tap to choose")) picks.push(t);
-    }
-  });
-
-  // Old inputs (if present)
-  ["r1", "r2", "r3", "r4"].forEach(id => {
-    const el = $(id);
-    if (el && "value" in el) {
-      const t = norm(el.value);
-      if (t) picks.push(t);
-    }
-  });
-
-  // State fallback
-  ["r1", "r2", "r3", "r4"].forEach(k => {
-    if (state[k]) picks.push(state[k]);
-  });
-
-  return [...new Set(picks)];
-}
-
-function findRelicsByNames(names) {
-  // Exact match
-  const exact = names
-    .map(n => RELICS.find(r => relicDisplayName(r) === n))
-    .filter(Boolean);
-
-  if (exact.length) return exact;
-
-  // Case-insensitive fallback
-  const map = new Map(RELICS.map(r => [relicDisplayName(r).toLowerCase(), r]));
-  return names.map(n => map.get(n.toLowerCase())).filter(Boolean);
-}
-
+// ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
+
   for (const r of relicsPicked) {
     const drops = r.drops ?? r.rewards ?? [];
     for (const d of drops) {
       const item = d.item ?? d.name ?? d.reward ?? "Unknown";
       const rarity = rarityToLabel(d.rarity ?? d.chance ?? d.tier ?? "");
       const plat = platForItem(item);
-      all.push({ item, from: relicDisplayName(r), rarity, plat: plat ?? -1 });
+      all.push({
+        item,
+        from: relicDisplayName(r),
+        rarity,
+        plat: plat ?? -1
+      });
     }
   }
 
-  // Merge duplicates by item
+  // merge duplicates
   const merged = new Map();
   for (const e of all) {
     const prev = merged.get(e.item);
@@ -251,11 +134,9 @@ function mergeAndSortRewards(relicsPicked) {
   return final;
 }
 
-// ---------- Rendering ----------
-
 function renderCards(list) {
   const cardsEl = $("cards");
-  if (!cardsEl) return false;
+  if (!cardsEl) return;
 
   cardsEl.innerHTML = "";
   for (const e of list) {
@@ -276,84 +157,44 @@ function renderCards(list) {
     `;
     cardsEl.appendChild(div);
   }
-  return true;
 }
 
-function renderTable(list) {
-  const rowsEl = $("rows");
-  if (!rowsEl) return false;
+function showRewards() {
+  const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
 
-  rowsEl.innerHTML = "";
-  for (const e of list) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${e.item}</td>
-      <td class="muted">${e.from}</td>
-      <td class="muted">${e.rarity || ""}</td>
-      <td class="num">${e.plat >= 0 ? e.plat : "?"}</td>
-    `;
-    rowsEl.appendChild(tr);
-  }
-  return true;
-}
-
-// ---------- Main action ----------
-
-async function showRewardsForSelectedRelics() {
-  const picks = pickSelectedRelicNames();
-  if (!picks.length) {
+  if (picks.length === 0) {
     setStatus("Pick at least 1 relic");
     return;
   }
 
-  const relicsPicked = findRelicsByNames(picks);
-  if (!relicsPicked.length) {
-    setStatus("Could not match relic names. Re-select the relics.");
+  const relicsPicked = picks
+    .map(name => RELICS.find(r => relicDisplayName(r) === name))
+    .filter(Boolean);
+
+  if (relicsPicked.length === 0) {
+    setStatus("Could not match relic names (try selecting again).");
     return;
   }
 
-  // 1) render immediately (even if prices missing)
-  let rewards = mergeAndSortRewards(relicsPicked);
-  (renderCards(rewards) || renderTable(rewards));
-  setStatus(`Showing ${rewards.length} unique rewards`);
+  const rewards = mergeAndSortRewards(relicsPicked);
+  renderCards(rewards);
 
-  // 2) fetch missing prices (phone-side), then re-render with prices
-  const updated = await fetchPricesForRewards(rewards, 50);
-
-  // Recompute plat values from cache and re-sort
-  rewards = rewards.map(r => {
-    const p = platForItem(r.item);
-    return { ...r, plat: (typeof p === "number") ? p : -1 };
-  });
-  rewards.sort((a, b) => b.plat - a.plat);
-
-  (renderCards(rewards) || renderTable(rewards));
-
-  if (updated > 0) {
-    setStatus(`Updated prices for ${updated} items`);
-  } else {
-    setStatus("No prices fetched (some items may not match market names)");
-  }
-
-  // Update footer “Price entries” based on local cache size (more truthful for you)
-  const stored = loadPriceCacheFromStorage() || {};
-  const footer = $("footer");
-  if (footer) footer.textContent = `Relics: ${RELICS.length} • Cached prices: ${Object.keys(stored).length}`;
+  const priced = rewards.filter(r => r.plat >= 0).length;
+  setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-// ---------- Boot ----------
-
+// ---------------- Boot ----------------
 async function boot() {
-  setStatus("Loading data…");
+  setStatus("Loading…");
 
-  const [relicRes, priceRes] = await Promise.all([
-    fetch("./data/Relics.min.json", { cache: "no-store" }),
-    fetch("./data/prices.json", { cache: "no-store" }).catch(() => null)
-  ]);
-
+  // Load relics + prices generated by the workflow
+  const relicRes = await fetch("./data/Relics.min.json", { cache: "no-store" });
   RELICS = await relicRes.json();
+
+  // If prices.json is empty/missing, PRICES becomes {}
   try {
-    PRICES = priceRes ? await priceRes.json() : {};
+    const priceRes = await fetch("./data/prices.json", { cache: "no-store" });
+    PRICES = await priceRes.json();
   } catch {
     PRICES = {};
   }
@@ -361,45 +202,37 @@ async function boot() {
   RELIC_NAMES = RELICS.map(relicDisplayName).sort((a, b) => a.localeCompare(b));
 
   const footer = $("footer");
-  if (footer) {
-    const stored = loadPriceCacheFromStorage() || {};
-    footer.textContent = `Relics: ${RELICS.length} • Cached prices: ${Object.keys(stored).length}`;
-  }
+  if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+
+  // Bind modal UI
+  $("modalClose")?.addEventListener("click", closeModal);
+  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
+
+  document.querySelectorAll(".pickerBtn").forEach(btn => {
+    btn.addEventListener("click", () => openModal(btn.dataset.target));
+  });
+
+  // Buttons
+  $("btnShow")?.addEventListener("click", showRewards);
+  $("btnClear")?.addEventListener("click", () => {
+    state.r1 = state.r2 = state.r3 = state.r4 = null;
+
+    ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
+      const el = $(id);
+      if (el) {
+        el.textContent = "Tap to choose";
+        el.classList.add("pickerPlaceholder");
+      }
+    });
+
+    $("cards") && ($("cards").innerHTML = "");
+    setStatus("Cleared");
+  });
 
   setStatus("Ready");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  const showBtn = $("btnShow");
-  const clearBtn = $("btnClear");
-
-  if (showBtn) showBtn.addEventListener("click", () => { showRewardsForSelectedRelics(); });
-
-  if (clearBtn) {
-    clearBtn.addEventListener("click", () => {
-      ["r1", "r2", "r3", "r4"].forEach(id => {
-        const el = $(id);
-        if (el && "value" in el) el.value = "";
-      });
-
-      ["r1", "r2", "r3", "r4"].forEach(k => {
-        state[k] = null;
-        const tEl = $(`${k}Text`);
-        if (tEl) {
-          tEl.textContent = "Tap to choose";
-          tEl.classList.add("pickerPlaceholder");
-        }
-      });
-
-      const cards = $("cards");
-      if (cards) cards.innerHTML = "";
-      const rows = $("rows");
-      if (rows) rows.innerHTML = "";
-
-      setStatus("Cleared");
-    });
-  }
-
   boot().catch(err => {
     console.error(err);
     setStatus("Failed to load data");
