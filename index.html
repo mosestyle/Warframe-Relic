@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Relic Reward Sorter</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="wrap">
+    <h1>Relic Reward Sorter</h1>
+    <p class="muted">Pick 4 relics • see all possible rewards • sort by plat value.</p>
+  </header>
+
+  <main class="wrap card">
+    <section class="grid">
+      <div class="field">
+        <label>Relic 1</label>
+        <input id="r1" list="relicsList" placeholder="e.g. Axi S18 / Neo N16 / Lith A1" />
+      </div>
+      <div class="field">
+        <label>Relic 2</label>
+        <input id="r2" list="relicsList" placeholder="e.g. Meso M6" />
+      </div>
+      <div class="field">
+        <label>Relic 3</label>
+        <input id="r3" list="relicsList" placeholder="e.g. Lith L4" />
+      </div>
+      <div class="field">
+        <label>Relic 4</label>
+        <input id="r4" list="relicsList" placeholder="e.g. Neo S3" />
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="btnShow">Show rewards</button>
+      <button id="btnClear" class="ghost">Clear</button>
+      <div class="status" id="status"></div>
+    </section>
+
+    <datalist id="relicsList"></datalist>
+
+    <section class="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Reward</th>
+            <th>From relic(s)</th>
+            <th>Rarity</th>
+            <th class="num">Plat</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+
+    <footer class="muted small" id="footer"></footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
