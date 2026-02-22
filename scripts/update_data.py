@@ -6,7 +6,7 @@ import time
 import urllib.parse
 import urllib.request
 import urllib.error
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 DATA_DIR = "data"
 RELICS_OUT = os.path.join(DATA_DIR, "Relics.min.json")
@@ -22,16 +22,20 @@ RELICS_URL_FALLBACK = (
     "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/Relics.json"
 )
 
-# --- Warframe.market endpoints (PUBLIC) ---
-# NOTE: Warframe.market has multiple hostnames. The reliable public API base is api.warframe.market.
+# --- Warframe.market endpoints ---
+# Keep using v1 statistics endpoint (your current design),
+# but we STOP using /v1/items because it can 404 / change.
 WM_BASE = "https://api.warframe.market/v1"
-WM_ITEMS = f"{WM_BASE}/items"  # list of all items (gives item_name + url_name)
 WM_ITEM_STATS = f"{WM_BASE}/items/{{url_name}}/statistics"  # statistics for a specific item
 
-UA = "mosestyle-warframe-relic/2.0 (+github pages actions)"
+UA = "mosestyle-warframe-relic/2.1 (+github pages actions)"
 
-# Throttling
-SLEEP_BETWEEN_WM_CALLS = 0.25  # keep it gentle
+# Warframe.market headers that are often expected
+WM_PLATFORM = "pc"
+WM_LANGUAGE = "en"
+
+# Throttling (be gentle in GitHub Actions)
+SLEEP_BETWEEN_WM_CALLS = 0.40  # ~2.5 req/sec
 HTTP_TIMEOUT = 60
 
 
@@ -54,6 +58,9 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
                     "Accept": "application/json,text/plain,*/*",
                     "Accept-Language": "en-US,en;q=0.9",
                     "Connection": "close",
+                    # WM-specific headers
+                    "Platform": WM_PLATFORM,
+                    "Language": WM_LANGUAGE,
                 },
             )
             with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -85,8 +92,8 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
 def relic_display_name_from_min(obj: Dict[str, Any]) -> str:
     """
     Normalize to: "Axi A2" style names if possible.
-    warframe-relic-data Relics.min.json typically uses keys like { "name": "A2", "tier": "Axi" }
-    Some versions may already have full names.
+    warframe-relic-data Relics.min.json typically uses keys like:
+      { "name": "A2", "tier": "Axi" }
     """
     tier = (obj.get("tier") or obj.get("era") or "").strip()
     name = (obj.get("name") or obj.get("relicName") or "").strip()
@@ -107,7 +114,7 @@ def build_relics_min() -> List[Dict[str, Any]]:
       ...
     ]
     """
-    print(f"Downloading relics (primary: WFCD warframe-relic-data Relics.min.json)...")
+    print("Downloading relics (primary: WFCD warframe-relic-data Relics.min.json)...")
     payload = None
     try:
         payload = http_json(RELICS_MIN_URL_PRIMARY)
@@ -118,13 +125,11 @@ def build_relics_min() -> List[Dict[str, Any]]:
     relics_raw: List[Dict[str, Any]] = []
 
     if isinstance(payload, list) and payload:
-        # warframe-relic-data Relics.min.json is typically a list
         relics_raw = payload
     else:
         print("Falling back to WFCD warframe-items Relics.json...")
         payload2 = http_json(RELICS_URL_FALLBACK)
 
-        # WFCD Relics.json can be dict {"relics":[...]} OR a list directly
         if isinstance(payload2, dict) and "relics" in payload2 and isinstance(payload2["relics"], list):
             relics_raw = payload2["relics"]
         elif isinstance(payload2, list):
@@ -146,7 +151,6 @@ def build_relics_min() -> List[Dict[str, Any]]:
         if "tier" in r or "era" in r:
             relic_name = relic_display_name_from_min(r)
         else:
-            # fallback format usually has "name" already like "Axi A2" sometimes
             relic_name = (r.get("name") or "").strip()
             relic_name = re.sub(r"\s+", " ", relic_name)
 
@@ -194,73 +198,27 @@ def unique_reward_items(relics_min: List[Dict[str, Any]]) -> List[str]:
 
 # -------------------- Warframe.market pricing --------------------
 
-def norm_key(s: str) -> str:
+def guess_wm_url_name(item_name: str) -> str:
     """
-    Normalization for matching item names.
+    warframe.market url_name is typically:
+      lowercase + underscores, stripping punctuation.
+
+    Examples:
+      "Nikana Prime Blueprint" -> "nikana_prime_blueprint"
+      "Aklex Prime Link" -> "aklex_prime_link"
     """
-    s = (s or "").strip().lower()
+    s = (item_name or "").strip().lower()
     s = s.replace("&", "and")
-    s = re.sub(r"[^a-z0-9]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
     return s
 
 
-def build_wm_name_to_urlname() -> Dict[str, str]:
-    """
-    Build mapping: item_name -> url_name from warframe.market /items
-    Expected payload:
-      { "payload": { "items": [ { "item_name": "...", "url_name": "..." }, ... ] } }
-    """
-    payload = http_json(WM_ITEMS)
-    items = None
-    if isinstance(payload, dict):
-        items = payload.get("payload", {}).get("items")
-
-    if not isinstance(items, list) or not items:
-        raise RuntimeError("warframe.market /items returned no items (payload shape unexpected).")
-
-    exact: Dict[str, str] = {}
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        name = it.get("item_name")
-        url = it.get("url_name")
-        if isinstance(name, str) and isinstance(url, str) and name and url:
-            exact[name] = url
-
-    if not exact:
-        raise RuntimeError("warframe.market /items mapping became empty.")
-
-    return exact
-
-
-def build_wm_lookup_maps(exact_map: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """
-    Returns:
-      - exact_map: item_name -> url_name
-      - norm_map: normalized(item_name) -> url_name (first seen)
-    """
-    norm_map: Dict[str, str] = {}
-    for name, url in exact_map.items():
-        nk = norm_key(name)
-        norm_map.setdefault(nk, url)
-    return exact_map, norm_map
-
-
-def find_wm_url_name(item_name: str, exact_map: Dict[str, str], norm_map: Dict[str, str]) -> Optional[str]:
-    # 1) exact
-    if item_name in exact_map:
-        return exact_map[item_name]
-
-    # 2) normalized
-    nk = norm_key(item_name)
-    if nk in norm_map:
-        return norm_map[nk]
-
-    # 3) small heuristic tweaks (common mismatches)
-    # Example: "Blueprint" vs "blueprint" is covered; punctuation covered.
-    # You can add extra replacements here later if you find systematic mismatches.
-    return None
+# If you ever find specific items that don't match the guessed format,
+# put them here (key = item display name from relic data, value = WM url_name)
+WM_URL_OVERRIDES: Dict[str, str] = {
+    # "Some Weird Name": "some_weird_url_name",
+}
 
 
 def wm_90day_median(url_name: str) -> Optional[int]:
@@ -268,11 +226,18 @@ def wm_90day_median(url_name: str) -> Optional[int]:
     Reads warframe.market statistics and returns most recent 90-day median (closed stats).
     Endpoint:
       /v1/items/{url_name}/statistics
+
     Expected:
       payload.statistics_closed['90days'] -> list of objects with 'median'
     """
     url = WM_ITEM_STATS.format(url_name=urllib.parse.quote(url_name))
-    payload = http_json(url)
+    try:
+        payload = http_json(url)
+    except urllib.error.HTTPError as e:
+        # Many items won't exist or won't have stats -> skip instead of failing workflow
+        if e.code == 404:
+            return None
+        raise
 
     try:
         stats_closed = payload["payload"]["statistics_closed"]
@@ -280,13 +245,11 @@ def wm_90day_median(url_name: str) -> Optional[int]:
         if not arr_90:
             return None
 
-        # Most recent is usually last element
-        last = arr_90[-1]
+        last = arr_90[-1]  # most recent
         med = last.get("median")
         if med is None:
             return None
 
-        # med may be float
         return int(round(float(med)))
     except Exception:
         return None
@@ -296,34 +259,35 @@ def build_prices_from_wm_90d_median(relics_min: List[Dict[str, Any]]) -> Dict[st
     reward_items = unique_reward_items(relics_min)
     print(f"Unique reward items to price: {len(reward_items)}")
 
-    print("Downloading warframe.market item list (name -> url_name)...")
-    exact_map = build_wm_name_to_urlname()
-    exact_map, norm_map = build_wm_lookup_maps(exact_map)
-
     prices: Dict[str, int] = {}
-    missing_map = 0
-    missing_stats = 0
+    missing_or_notfound = 0
 
     for i, item_name in enumerate(reward_items, start=1):
-        url_name = find_wm_url_name(item_name, exact_map, norm_map)
-        if not url_name:
-            missing_map += 1
-            if i % 25 == 0:
-                print(f"  {i}/{len(reward_items)} priced={len(prices)} (missing map={missing_map}, missing stats={missing_stats})")
-            continue
+        url_name = WM_URL_OVERRIDES.get(item_name) or guess_wm_url_name(item_name)
 
-        med = wm_90day_median(url_name)
+        try:
+            med = wm_90day_median(url_name)
+        except urllib.error.HTTPError as e:
+            # If we get rate-limited despite throttling, treat as transient failure
+            # and count it as missing rather than killing the deployment.
+            if e.code in (429, 500, 502, 503, 504):
+                missing_or_notfound += 1
+                time.sleep(1.25)
+                med = None
+            else:
+                raise
+
         if med is None:
-            missing_stats += 1
+            missing_or_notfound += 1
         else:
             prices[item_name] = med
 
         if i % 25 == 0:
-            print(f"  {i}/{len(reward_items)} priced={len(prices)} (missing map={missing_map}, missing stats={missing_stats})")
+            print(f"  {i}/{len(reward_items)} priced={len(prices)} (missing/notfound={missing_or_notfound})")
 
         time.sleep(SLEEP_BETWEEN_WM_CALLS)
 
-    print(f"WM pricing done: {len(prices)}/{len(reward_items)} priced. Missing map={missing_map}, missing stats={missing_stats}")
+    print(f"WM pricing done: {len(prices)}/{len(reward_items)} priced. Missing/NotFound={missing_or_notfound}")
     return prices
 
 
@@ -342,7 +306,7 @@ def main():
     # Safety: if something went wrong and we priced almost nothing, fail the workflow
     if len(prices) < 25:
         raise RuntimeError(
-            f"Too few prices ({len(prices)}). warframe.market calls may be failing, or mapping broke."
+            f"Too few prices ({len(prices)}). warframe.market calls may be failing, or endpoint changed."
         )
 
     print("Done.")
