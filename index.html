@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Moses - Warframe Relic Reward Value</title>
+  <title>Relic Reward Sorter</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="wrap">
-    <h1>Moses - Warframe Relic Reward Value</h1>
+    <h1>Relic Reward Sorter</h1>
     <p class="muted">Pick 4 relics • see all possible rewards • sort by plat value.</p>
   </header>
 
@@ -25,7 +25,7 @@
       <div class="field">
         <label>Relic 2</label>
         <button class="pickerBtn" data-target="r2" type="button">
-          <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r2Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -33,7 +33,7 @@
       <div class="field">
         <label>Relic 3</label>
         <button class="pickerBtn" data-target="r3" type="button">
-          <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r3Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -41,7 +41,7 @@
       <div class="field">
         <label>Relic 4</label>
         <button class="pickerBtn" data-target="r4" type="button">
-          <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r4Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -53,6 +53,7 @@
       <div class="status" id="status"></div>
     </section>
 
+    <!-- Results (cards for mobile) -->
     <section class="results">
       <div id="cards"></div>
     </section>
@@ -60,6 +61,7 @@
     <footer class="muted small" id="footer"></footer>
   </main>
 
+  <!-- Fullscreen Relic Picker -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalTop">
       <button id="modalClose" class="modalClose" type="button">✕</button>
