@@ -1,12 +1,12 @@
-// app.js — Modal picker UI + prices from data/prices.json ONLY.
+// app.js — baseline UI logic.
+// SIGNATURE: CLEAR_PLACEHOLDER_FIX_2026_02_22
 
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
-let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
-const PLACEHOLDER_BASE = "Tap to choose";
+const CLEAR_TEXT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
 
@@ -31,28 +31,22 @@ function rarityToLabel(r) {
   return String(r ?? "");
 }
 
-// ---------------- Natural relic sort ----------------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
   const s = (str || "").trim().replace(/\s+/g, " ");
   const m = s.match(/^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$/);
   if (!m) return { era: "", letters: s, num: 0, tail: "" };
-  return {
-    era: m[1],
-    letters: m[2],
-    num: parseInt(m[3], 10) || 0,
-    tail: m[4] || ""
-  };
+  return { era: m[1], letters: m[2], num: parseInt(m[3], 10) || 0, tail: m[4] || "" };
 }
 
 function relicNaturalCompare(a, b) {
   const A = parseRelicName(a);
   const B = parseRelicName(b);
 
-  const eraA = ERA_ORDER[A.era] ?? 99;
-  const eraB = ERA_ORDER[B.era] ?? 99;
-  if (eraA !== eraB) return eraA - eraB;
+  const ea = ERA_ORDER[A.era] ?? 99;
+  const eb = ERA_ORDER[B.era] ?? 99;
+  if (ea !== eb) return ea - eb;
 
   const lc = A.letters.localeCompare(B.letters, undefined, { sensitivity: "base" });
   if (lc !== 0) return lc;
@@ -65,31 +59,24 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Modal picker ----------------
+// Modal picker
 let modalTarget = null;
 
 function openModal(targetKey) {
+  modalTarget = targetKey;
   const modal = $("modal");
   if (!modal) return;
 
-  modalTarget = targetKey;
-
-  const title = $("modalTitle");
-  if (title) title.textContent = "Choose relic";
-
-  const search = $("modalSearch");
-  if (search) search.value = "";
-
+  $("modalTitle").textContent = "Choose relic";
+  $("modalSearch").value = "";
   renderModalList("");
 
   modal.classList.remove("hidden");
-  setTimeout(() => search?.focus(), 60);
+  setTimeout(() => $("modalSearch")?.focus(), 60);
 }
 
 function closeModal() {
-  const modal = $("modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
+  $("modal")?.classList.add("hidden");
   modalTarget = null;
 }
 
@@ -110,7 +97,6 @@ function renderModalList(filter) {
     row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
     row.addEventListener("click", () => {
       if (!modalTarget) return;
-
       state[modalTarget] = name;
 
       const tEl = $(`${modalTarget}Text`);
@@ -118,14 +104,12 @@ function renderModalList(filter) {
         tEl.textContent = name;
         tEl.classList.remove("pickerPlaceholder");
       }
-
       closeModal();
     });
     listEl.appendChild(row);
   }
 }
 
-// ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
 
@@ -135,21 +119,15 @@ function mergeAndSortRewards(relicsPicked) {
       const item = d.item ?? d.name ?? d.reward ?? "Unknown";
       const rarity = rarityToLabel(d.rarity ?? d.chance ?? d.tier ?? "");
       const plat = platForItem(item);
-      all.push({
-        item,
-        from: relicDisplayName(r),
-        rarity,
-        plat: plat ?? -1
-      });
+      all.push({ item, from: relicDisplayName(r), rarity, plat: plat ?? -1 });
     }
   }
 
   const merged = new Map();
   for (const e of all) {
     const prev = merged.get(e.item);
-    if (!prev) {
-      merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
-    } else {
+    if (!prev) merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
+    else {
       prev.fromSet.add(e.from);
       prev.plat = Math.max(prev.plat, e.plat);
     }
@@ -193,20 +171,13 @@ function renderCards(list) {
 
 function showRewards() {
   const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
-
-  if (picks.length === 0) {
-    setStatus("Pick at least 1 relic");
-    return;
-  }
+  if (picks.length === 0) return setStatus("Pick at least 1 relic");
 
   const relicsPicked = picks
     .map(name => RELICS.find(r => relicDisplayName(r) === name))
     .filter(Boolean);
 
-  if (relicsPicked.length === 0) {
-    setStatus("Could not match relic names (try selecting again).");
-    return;
-  }
+  if (relicsPicked.length === 0) return setStatus("Could not match relic names (try selecting again).");
 
   const rewards = mergeAndSortRewards(relicsPicked);
   renderCards(rewards);
@@ -215,15 +186,25 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-// Footer: populate left stats into the new spans if present
-function updateFooter() {
-  const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
-  const leftEl = $("footerLeft");
-  if (leftEl) leftEl.textContent = left;
+function clearUI() {
+  state.r1 = state.r2 = state.r3 = state.r4 = null;
+
+  for (const id of ["r1Text", "r2Text", "r3Text", "r4Text"]) {
+    const el = $(id);
+    if (!el) continue;
+    el.textContent = CLEAR_TEXT;
+    el.classList.add("pickerPlaceholder");
+  }
+
+  const cards = $("cards");
+  if (cards) cards.innerHTML = "";
+
+  setStatus("Cleared");
 }
 
-// ---------------- Boot ----------------
+// Boot
 async function boot() {
+  console.log("Loaded app.js SIGNATURE: CLEAR_PLACEHOLDER_FIX_2026_02_22");
   setStatus("Loading…");
 
   const relicRes = await fetch("./data/Relics.min.json", { cache: "no-store" });
@@ -238,8 +219,6 @@ async function boot() {
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
-  updateFooter();
-
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
@@ -248,23 +227,7 @@ async function boot() {
   });
 
   $("btnShow")?.addEventListener("click", showRewards);
-
-  $("btnClear")?.addEventListener("click", () => {
-    state.r1 = state.r2 = state.r3 = state.r4 = null;
-
-    const ids = ["r1Text", "r2Text", "r3Text", "r4Text"];
-    for (const id of ids) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      el.textContent = PLACEHOLDER_BASE;      // CSS adds the suffix
-      el.classList.add("pickerPlaceholder");  // makes suffix appear
-    }
-
-    const cards = $("cards");
-    if (cards) cards.innerHTML = "";
-
-    setStatus("Cleared");
-  });
+  $("btnClear")?.addEventListener("click", clearUI);
 
   setStatus("Ready");
 }
