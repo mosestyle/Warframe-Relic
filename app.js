@@ -1,5 +1,5 @@
 // app.js — Modal picker UI + prices from data/prices.json ONLY.
-// No caching, no client-side price fetching.
+// No caching tricks. No layout changes.
 
 let RELICS = [];
 let PRICES = {};
@@ -7,7 +7,6 @@ let RELIC_NAMES = [];
 let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
-const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,7 +31,7 @@ function rarityToLabel(r) {
   return String(r ?? "");
 }
 
-// ---------------- Natural relic sort (A1, A2, ... A10) ----------------
+// ---------------- Natural relic sort ----------------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
@@ -216,26 +215,13 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-function resetPickersToDefault() {
-  ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
-    const el = $(id);
-    if (el) {
-      el.textContent = PICKER_DEFAULT;
-      el.classList.add("pickerPlaceholder");
-    }
-  });
-}
-
+// ---------------- Footer ----------------
 function updateFooter() {
   const footer = $("footer");
   if (!footer) return;
 
   const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
-
-  // Always show something (so you can see the text in that red box)
-  const right = (META && META.generated_at)
-    ? `Last generated: ${META.generated_at}`
-    : `Last generated: (missing meta.json)`;
+  const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
 
   footer.style.display = "flex";
   footer.style.justifyContent = "space-between";
@@ -278,10 +264,22 @@ async function boot() {
 
   $("btnShow")?.addEventListener("click", showRewards);
 
+  // 🔥 THIS IS THE FIXED CLEAR BUTTON
   $("btnClear")?.addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
-    resetPickersToDefault();
-    $("cards") && ($("cards").innerHTML = "");
+
+    const ids = ["r1Text", "r2Text", "r3Text", "r4Text"];
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+
+      el.textContent = "Tap to choose (Lith/Meso/Neo/Axi)";
+      el.classList.add("pickerPlaceholder");
+    }
+
+    const cards = $("cards");
+    if (cards) cards.innerHTML = "";
+
     setStatus("Cleared");
   });
 
