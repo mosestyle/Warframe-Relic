@@ -1,5 +1,4 @@
 import json
-import re
 import time
 import urllib.request
 import urllib.error
@@ -10,19 +9,20 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/data/Relics.min.json"
 
+# WFCD items list (name -> url_name). This avoids /v1/items which is 404 for you.
+WFCD_ITEMS_URL = "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/All.json"
+
 WM_BASE = "https://api.warframe.market/v1"
-WM_ITEMS_URL = f"{WM_BASE}/items"
 WM_ORDERS_URL = f"{WM_BASE}/items/{{}}/orders"
 
 HEADERS = {
     "Accept": "application/json",
     "User-Agent": "Mozilla/5.0 (GitHub Actions; mosestyle relic sorter)",
-    # IMPORTANT: Platform is set here, not inside each order object:
     "Platform": "pc",
     "Language": "en",
 }
 
-def get_json(url: str, timeout=60, retries=3, backoff=1.2):
+def get_json(url: str, timeout=60, retries=3, backoff=1.4):
     last_err = None
     for attempt in range(1, retries + 1):
         try:
@@ -30,8 +30,8 @@ def get_json(url: str, timeout=60, retries=3, backoff=1.2):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
-            # retry common transient errors
-            if e.code in (429, 502, 503, 504):
+            # retry transient errors
+            if e.code in (429, 500, 502, 503, 504):
                 last_err = e
                 time.sleep(backoff * attempt)
                 continue
@@ -41,19 +41,8 @@ def get_json(url: str, timeout=60, retries=3, backoff=1.2):
             time.sleep(backoff * attempt)
     raise last_err
 
-def to_guess_url_name(item_name: str) -> str:
-    s = item_name.strip().lower()
-    s = s.replace("’", "'").replace("&", "and")
-    s = re.sub(r"[^a-z0-9 _'\-]", " ", s)
-    s = s.replace("'", " ")
-    s = s.replace("-", " ")
-    s = re.sub(r"\s+", "_", s)
-    s = re.sub(r"_+", "_", s)
-    return s.strip("_")
-
 def price_from_orders(orders: list):
-    # Visible orders only. Prefer lowest sell; fallback to highest buy.
-    # NOTE: Do NOT filter on o["platform"] here — platform is set by request header.
+    # Do NOT filter on order["platform"] — platform is controlled by request header.
     sells = []
     buys = []
 
@@ -69,6 +58,7 @@ def price_from_orders(orders: list):
         elif o.get("order_type") == "buy":
             buys.append(p)
 
+    # Lowest sell = typical market price. If none, fallback to highest buy.
     if sells:
         return int(round(min(sells)))
     if buys:
@@ -81,45 +71,57 @@ def main():
     (DATA_DIR / "Relics.min.json").write_text(json.dumps(relics), encoding="utf-8")
     print(f"Relics downloaded: {len(relics)}")
 
-    # Collect unique drop item names from relics
+    # Your relic json may have "drops" or "rewards". Support both.
     drop_names = set()
     for r in relics:
-        for d in (r.get("drops") or []):
-            nm = d.get("item")
+        rewards = r.get("drops") or r.get("rewards") or []
+        for d in rewards:
+            nm = d.get("item") or d.get("name")
             if nm:
                 drop_names.add(nm)
 
     drop_names = sorted(drop_names)
     print(f"Unique relic drops: {len(drop_names)}")
 
-    # Build official name -> url_name mapping from warframe.market
-    print("Downloading Warframe.market items list…")
-    items_payload = get_json(WM_ITEMS_URL)
-    items = items_payload.get("payload", {}).get("items", []) or []
-    print(f"Market items downloaded: {len(items)}")
+    print("Downloading WFCD items list…")
+    items = get_json(WFCD_ITEMS_URL)
+    print(f"WFCD items: {len(items)}")
 
+    # Build map item_name -> url_name using common fields in WFCD data
     name_to_url = {}
     for it in items:
-        item_name = it.get("item_name") or it.get("en", {}).get("item_name")
-        url_name = it.get("url_name")
-        if item_name and url_name:
-            name_to_url[item_name] = url_name
+        # candidate names
+        names = []
+        if isinstance(it.get("name"), str):
+            names.append(it["name"])
+        if isinstance(it.get("uniqueName"), str):
+            # uniqueName is not the display name; ignore for mapping
+            pass
+
+        # candidate url_name fields
+        url_name = it.get("url_name") or it.get("urlName") or it.get("warframeMarketUrlName")
+
+        if url_name and names:
+            for nm in names:
+                name_to_url[nm] = url_name
+
+    print(f"Mapped names: {len(name_to_url)}")
 
     prices = {}
-    missing_in_items = 0
-    not_found_orders = 0
+    missing_url = 0
+    not_found = 0
     other_errors = 0
 
     for i, name in enumerate(drop_names, start=1):
         url_name = name_to_url.get(name)
         if not url_name:
-            missing_in_items += 1
-            url_name = to_guess_url_name(name)
+            missing_url += 1
+            continue  # cannot price without url_name
 
         url = WM_ORDERS_URL.format(url_name)
 
         try:
-            data = get_json(url, retries=4, backoff=1.6)
+            data = get_json(url, retries=4, backoff=1.7)
             orders = data.get("payload", {}).get("orders", []) or []
             p = price_from_orders(orders)
             if p is not None:
@@ -127,14 +129,14 @@ def main():
 
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                not_found_orders += 1
+                not_found += 1
             else:
                 other_errors += 1
         except Exception:
             other_errors += 1
 
         if i % 25 == 0:
-            print(f"Processed {i}/{len(drop_names)} • prices so far: {len(prices)}")
+            print(f"Processed {i}/{len(drop_names)} • prices: {len(prices)}")
             time.sleep(0.7)
 
     (DATA_DIR / "prices.json").write_text(
@@ -144,8 +146,8 @@ def main():
 
     print("DONE")
     print(f"Saved prices for: {len(prices)} items")
-    print(f"Missing from /items list (used fallback slug): {missing_in_items}")
-    print(f"404 on /orders: {not_found_orders}")
+    print(f"Missing url_name for: {missing_url}")
+    print(f"404 on orders: {not_found}")
     print(f"Other errors: {other_errors}")
 
 if __name__ == "__main__":
