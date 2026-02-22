@@ -8,34 +8,31 @@ import urllib.request
 import urllib.error
 from typing import Any, Dict, List, Optional, Tuple
 
+
 DATA_DIR = "data"
 RELICS_OUT = os.path.join(DATA_DIR, "Relics.min.json")
 PRICES_OUT = os.path.join(DATA_DIR, "prices.json")
+META_OUT = os.path.join(DATA_DIR, "meta.json")
 
-MISSING_TXT = os.path.join(DATA_DIR, "missing_prices.txt")
-MISSING_JSON = os.path.join(DATA_DIR, "missing_prices.json")
+# Debug outputs (requested: save in scripts folder)
+MISSING_TXT = os.path.join("scripts", "missing_prices.txt")
+MISSING_JSON = os.path.join("scripts", "missing_prices.json")
 
 # -------------------- Relics sources --------------------
-# FULL relic rewards (includes vaulted + old relics) from WFCD warframe-drop-data
 RELICS_ALL_URL = "https://raw.githubusercontent.com/WFCD/warframe-drop-data/master/data/relics.json"
-
-# Vault flag source (smaller list, but has "vaulted": true/false)
 RELICS_VAULT_MAP_URL = (
     "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/data/Relics.min.json"
 )
 
 # -------------------- Warframe.market endpoints --------------------
-# Use ONLY statistics endpoint (orders endpoint can 403 from GitHub Actions IPs)
 WM_BASE = "https://api.warframe.market/v1"
 WM_ITEM_STATS = f"{WM_BASE}/items/{{url_name}}/statistics"
 
-UA = "mosestyle-warframe-relic/2.5 (+github pages actions)"
-
+UA = "mosestyle-warframe-relic/2.6 (+github pages actions)"
 WM_PLATFORM = "pc"
 WM_LANGUAGE = "en"
 
-# Throttling
-SLEEP_BETWEEN_WM_CALLS = 0.40  # ~2.5 req/sec
+SLEEP_BETWEEN_WM_CALLS = 0.40
 HTTP_TIMEOUT = 60
 
 TIER_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3}
@@ -46,10 +43,6 @@ def ensure_data_dir():
 
 
 def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
-    """
-    Fetch JSON with retries/backoff.
-    Handles transient 429/5xx/connection issues.
-    """
     last_err = None
     for i in range(attempts):
         try:
@@ -60,10 +53,8 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
                     "Accept": "application/json,text/plain,*/*",
                     "Accept-Language": "en-US,en;q=0.9",
                     "Connection": "close",
-                    # WM headers (harmless for WFCD endpoints)
                     "Platform": WM_PLATFORM,
                     "Language": WM_LANGUAGE,
-                    # Helps with some WAF rules (doesn't hurt):
                     "Referer": "https://warframe.market/",
                     "Origin": "https://warframe.market",
                 },
@@ -78,7 +69,6 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
                 time.sleep(1.5 ** i)
                 continue
             raise
-
         except Exception as e:
             last_err = e
             time.sleep(1.5 ** i)
@@ -91,9 +81,6 @@ def http_json(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> Any:
 # -------------------- Relics parsing --------------------
 
 def build_vaulted_map() -> Dict[str, bool]:
-    """
-    Map "Axi A1" -> vaulted True/False from WFCD warframe-relic-data (limited list).
-    """
     try:
         payload = http_json(RELICS_VAULT_MAP_URL)
     except Exception:
@@ -112,16 +99,6 @@ def build_vaulted_map() -> Dict[str, bool]:
 
 
 def build_relics_min() -> List[Dict[str, Any]]:
-    """
-    Writes data/Relics.min.json in UI-friendly format:
-    [
-      {"tier":"Axi","name":"A1","vaulted":true,"rewards":[{"item":"...","chance":25.33,"type":"Uncommon"}, ...]},
-      ...
-    ]
-
-    Source: WFCD warframe-drop-data relics.json (ALL relics).
-    Keep ONLY state == "Intact" to avoid duplicates of Exceptional/Flawless/Radiant.
-    """
     print("Downloading ALL relics (WFCD warframe-drop-data /data/relics.json)...")
     payload = http_json(RELICS_ALL_URL)
 
@@ -179,13 +156,10 @@ def build_relics_min() -> List[Dict[str, Any]]:
             continue
 
         vaulted = vault_map.get(full_name, True)
-
         out.append({"tier": tier, "name": code, "vaulted": vaulted, "rewards": out_rewards})
 
     def sort_key(x: Dict[str, Any]) -> Tuple[int, str]:
-        t = x.get("tier") or ""
-        n = x.get("name") or ""
-        return (TIER_ORDER.get(t, 99), n)
+        return (TIER_ORDER.get(x.get("tier") or "", 99), x.get("name") or "")
 
     out.sort(key=sort_key)
 
@@ -214,10 +188,6 @@ def unique_reward_items(relics_min: List[Dict[str, Any]]) -> List[str]:
 # -------------------- Warframe.market pricing --------------------
 
 def guess_wm_url_name(item_name: str) -> str:
-    """
-    Typical WM url_name:
-      lowercase + underscores, stripping punctuation.
-    """
     s = (item_name or "").strip().lower()
     s = s.replace("&", "and")
     s = re.sub(r"[^a-z0-9]+", "_", s)
@@ -225,31 +195,23 @@ def guess_wm_url_name(item_name: str) -> str:
     return s
 
 
-# Manual overrides (keep empty; Option B auto-candidates handles most issues)
 WM_URL_OVERRIDES: Dict[str, str] = {
-    # You can still pin special cases here if you want:
+    # Optional pinned fixes:
     # "Kompressa Prime Receiver": "kompressa_prime_reciever",
 }
 
 
 def wm_url_candidates(item_name: str) -> List[str]:
-    """
-    Generate possible WM url_name candidates.
-    This is how we fix cases like:
-      receiver -> reciever  (known WM typo on some items)
-    """
     base = WM_URL_OVERRIDES.get(item_name) or guess_wm_url_name(item_name)
     cands = [base]
 
     # Known WM typo: receiver -> reciever
     if base.endswith("_receiver"):
         cands.append(base[:-len("_receiver")] + "_reciever")
-
-    # Also handle receiver in the middle (rare)
     if "_receiver_" in base:
         cands.append(base.replace("_receiver_", "_reciever_"))
 
-    # De-dupe preserving order
+    # De-dupe
     seen = set()
     out = []
     for c in cands:
@@ -260,10 +222,6 @@ def wm_url_candidates(item_name: str) -> List[str]:
 
 
 def _median_from_stats_section(stats_section: Any, window_key: str) -> Optional[int]:
-    """
-    stats_section = payload['statistics_closed'] or payload['statistics_open']
-    window_key: '90days' or '48hours'
-    """
     if not isinstance(stats_section, dict):
         return None
     arr = stats_section.get(window_key) or []
@@ -282,12 +240,6 @@ def _median_from_stats_section(stats_section: Any, window_key: str) -> Optional[
 
 
 def wm_price_from_statistics(url_name: str) -> Optional[int]:
-    """
-    Primary: statistics_closed 90days median
-    Fallback 1: statistics_open 90days median
-    Fallback 2: statistics_closed 48hours median
-    Fallback 3: statistics_open 48hours median
-    """
     url = WM_ITEM_STATS.format(url_name=urllib.parse.quote(url_name))
     try:
         payload = http_json(url)
@@ -301,21 +253,13 @@ def wm_price_from_statistics(url_name: str) -> Optional[int]:
         closed = p.get("statistics_closed")
         open_ = p.get("statistics_open")
 
-        v = _median_from_stats_section(closed, "90days")
-        if v is not None:
-            return v
-
-        v = _median_from_stats_section(open_, "90days")
-        if v is not None:
-            return v
-
-        v = _median_from_stats_section(closed, "48hours")
-        if v is not None:
-            return v
-
-        v = _median_from_stats_section(open_, "48hours")
-        if v is not None:
-            return v
+        for window in ("90days", "48hours"):
+            v = _median_from_stats_section(closed, window)
+            if v is not None:
+                return v
+            v = _median_from_stats_section(open_, window)
+            if v is not None:
+                return v
 
         return None
     except Exception:
@@ -332,13 +276,11 @@ def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Tuple[D
     for i, item_name in enumerate(reward_items, start=1):
         v: Optional[int] = None
 
-        # Try candidate slugs until one returns a price
         for url_name in wm_url_candidates(item_name):
             try:
                 v = wm_price_from_statistics(url_name)
             except urllib.error.HTTPError as e:
                 if e.code in (429, 500, 502, 503, 504):
-                    # transient — wait a bit and give up on this item for now
                     time.sleep(1.25)
                     v = None
                     break
@@ -362,19 +304,26 @@ def build_prices_from_wm_statistics(relics_min: List[Dict[str, Any]]) -> Tuple[D
 
 
 def write_missing_debug(missing_items: List[str]) -> None:
-    ensure_data_dir()
+    os.makedirs("scripts", exist_ok=True)
 
-    # Text file for quick eyeballing
     missing_sorted = sorted(set(missing_items))
     with open(MISSING_TXT, "w", encoding="utf-8") as f:
         for name in missing_sorted:
             f.write(name + "\n")
 
-    # JSON for future tooling
     with open(MISSING_JSON, "w", encoding="utf-8") as f:
         json.dump(missing_sorted, f, ensure_ascii=False, indent=2)
 
     print(f"Missing prices written: {len(missing_sorted)} -> {MISSING_TXT} (+ {MISSING_JSON})")
+
+
+def write_meta_generated_at() -> None:
+    from datetime import datetime, timezone
+    ensure_data_dir()
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with open(META_OUT, "w", encoding="utf-8") as f:
+        json.dump({"generated_at": today}, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"Meta written: 1 -> {META_OUT} (generated_at={today})")
 
 
 # -------------------- Main --------------------
@@ -389,9 +338,9 @@ def main():
         json.dump(prices, f, ensure_ascii=False, separators=(",", ":"))
     print(f"Prices written: {len(prices)} -> {PRICES_OUT}")
 
+    write_meta_generated_at()
     write_missing_debug(missing_items)
 
-    # Safety: if something went wrong and we priced almost nothing, fail the workflow
     if len(prices) < 25:
         raise RuntimeError(
             f"Too few prices ({len(prices)}). warframe.market calls may be failing, or endpoint changed."
