@@ -1,79 +1,80 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Moses - Warframe Relic Reward Value</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="wrap">
-    <header class="top">
-      <h1>Moses - Warframe Relic Reward Value</h1>
-      <p class="sub">Pick 4 relics • see all possible rewards • sort by plat value.</p>
-    </header>
+  <header class="wrap">
+    <h1>Moses - Warframe Relic Reward Value</h1>
+    <p class="muted">Pick 4 relics • see all possible rewards • sort by plat value.</p>
+  </header>
 
-    <section class="panel">
-      <div class="grid">
-        <div class="pick">
-          <label>Relic 1</label>
-          <button class="pickerBtn" data-target="r1">
-            <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▼</span>
-          </button>
-        </div>
-
-        <div class="pick">
-          <label>Relic 2</label>
-          <button class="pickerBtn" data-target="r2">
-            <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▼</span>
-          </button>
-        </div>
-
-        <div class="pick">
-          <label>Relic 3</label>
-          <button class="pickerBtn" data-target="r3">
-            <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▼</span>
-          </button>
-        </div>
-
-        <div class="pick">
-          <label>Relic 4</label>
-          <button class="pickerBtn" data-target="r4">
-            <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▼</span>
-          </button>
-        </div>
+  <main class="wrap card">
+    <section class="grid">
+      <div class="field">
+        <label>Relic 1</label>
+        <button class="pickerBtn" data-target="r1" type="button">
+          <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
       </div>
 
-      <div class="actions">
-        <button id="btnShow" class="primary">Show rewards</button>
-        <button id="btnClear" class="ghost">Clear</button>
-        <div id="status" class="status"></div>
+      <div class="field">
+        <label>Relic 2</label>
+        <button class="pickerBtn" data-target="r2" type="button">
+          <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
       </div>
 
-      <hr class="sep" />
+      <div class="field">
+        <label>Relic 3</label>
+        <button class="pickerBtn" data-target="r3" type="button">
+          <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
 
-      <div id="cards" class="cards"></div>
-
-      <footer id="footer" class="footer"></footer>
+      <div class="field">
+        <label>Relic 4</label>
+        <button class="pickerBtn" data-target="r4" type="button">
+          <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
     </section>
-  </div>
 
-  <!-- Modal -->
+    <section class="actions">
+      <button id="btnShow" type="button">Show rewards</button>
+      <button id="btnClear" class="ghost" type="button">Clear</button>
+      <div class="status" id="status"></div>
+    </section>
+
+    <!-- Results -->
+    <section class="results">
+      <div id="cards"></div>
+    </section>
+
+    <footer class="muted small" id="footer"></footer>
+  </main>
+
+  <!-- Fullscreen Relic Picker -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modalBox">
-      <div class="modalHead">
-        <button id="modalClose" class="modalClose">✕</button>
-        <div id="modalTitle" class="modalTitle">Choose relic</div>
-      </div>
-      <input id="modalSearch" class="modalSearch" placeholder="Search: e.g. Meso C1 / Neo N16 / Axi S18" />
-      <div id="modalList" class="modalList"></div>
+    <div class="modalTop">
+      <button id="modalClose" class="modalClose" type="button">✕</button>
+      <div class="modalTitle" id="modalTitle">Choose relic</div>
     </div>
+
+    <div class="modalSearch">
+      <input id="modalSearch" type="text" placeholder="Search: e.g. Meso C1 / Neo N16 / Axi S18" />
+    </div>
+
+    <div id="modalList" class="modalList"></div>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
