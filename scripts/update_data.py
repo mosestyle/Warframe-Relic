@@ -2,7 +2,6 @@
 import json
 import os
 import time
-import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -10,8 +9,11 @@ DATA_DIR = "data"
 RELICS_OUT = os.path.join(DATA_DIR, "Relics.min.json")
 PRICES_OUT = os.path.join(DATA_DIR, "prices.json")
 
-# Relic source
-RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/Relics.json"
+# ✅ Primary relic source (stable)
+RELICS_MIN_URL = "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/data/Relics.min.json"
+
+# Fallback relic source (format can vary)
+RELICS_JSON_URL = "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/Relics.json"
 
 # warframe.market API
 WM_ITEMS = "https://api.warframe.market/v1/items"
@@ -21,7 +23,7 @@ UA = "mosestyle-warframe-relic/1.0 (+github pages)"
 
 
 # ---------------- HTTP helpers ----------------
-def http_json(url: str, timeout: int = 60, tries: int = 3, backoff: float = 1.2):
+def http_json(url: str, timeout: int = 60, tries: int = 3, backoff: float = 1.25):
     last_err = None
     for i in range(tries):
         try:
@@ -30,8 +32,6 @@ def http_json(url: str, timeout: int = 60, tries: int = 3, backoff: float = 1.2)
                 headers={
                     "User-Agent": UA,
                     "Accept": "application/json,text/plain,*/*",
-                    # Warframe.market sometimes varies response by language;
-                    # EN tends to be safest for item_name matching.
                     "Accept-Language": "en-US,en;q=0.9",
                 },
             )
@@ -40,7 +40,6 @@ def http_json(url: str, timeout: int = 60, tries: int = 3, backoff: float = 1.2)
                 return json.loads(raw)
         except Exception as e:
             last_err = e
-            # gentle backoff
             time.sleep(backoff * (i + 1))
     raise last_err
 
@@ -50,39 +49,109 @@ def ensure_data_dir():
 
 
 # ---------------- Relics build ----------------
-def build_relics_min():
-    print("Downloading relics...")
-    payload = http_json(RELICS_URL)
+def normalize_relic_name(obj):
+    """
+    Try to return a display name like: "Axi A1"
+    """
+    n = obj.get("name")
+    if isinstance(n, str) and n.strip():
+        return " ".join(n.strip().split())
 
-    # WFCD Relics.json can be {"relics":[...]} OR a list
+    tier = obj.get("tier") or obj.get("era") or obj.get("group")
+    code = obj.get("relicName") or obj.get("relic_name") or obj.get("code") or obj.get("key")
+    if tier and code:
+        return f"{str(tier).strip()} {str(code).strip()}"
+
+    return None
+
+
+def normalize_rewards_list(relic_obj):
+    """
+    Returns list of reward dicts with:
+      {"item": "...", "chance": float/int/None, "type": "Common/Rare/Uncommon/..." }
+    Handles both 'rewards' and 'drops' keys.
+    """
+    rewards = relic_obj.get("rewards")
+    if not rewards:
+        rewards = relic_obj.get("drops")
+    if not rewards:
+        return []
+
+    out = []
+    for rw in rewards:
+        if not isinstance(rw, dict):
+            continue
+        item = rw.get("item") or rw.get("itemName") or rw.get("name") or rw.get("reward")
+        chance = rw.get("chance") or rw.get("dropChance") or rw.get("probability")
+        rtype = rw.get("rarity") or rw.get("type") or rw.get("tier")
+
+        if not item:
+            continue
+
+        out.append({"item": item, "chance": chance, "type": rtype})
+    return out
+
+
+def build_relics_min():
+    """
+    Writes data/Relics.min.json as:
+      [{"name":"Axi A1","rewards":[{"item":"...", "chance":..., "type":"..."}]}, ...]
+    """
+    # ✅ Try stable WFCD relic-data first (already min)
+    print("Downloading relics (primary: WFCD warframe-relic-data Relics.min.json)...")
+    try:
+        payload = http_json(RELICS_MIN_URL)
+        if isinstance(payload, list) and len(payload) > 0:
+            out = []
+            for r in payload:
+                if not isinstance(r, dict):
+                    continue
+                name = normalize_relic_name(r)
+                rewards = normalize_rewards_list(r)
+
+                # NOTE: WFCD relic-data min usually has "rewards" already
+                if not name:
+                    continue
+                if not rewards:
+                    # Some entries may be odd — skip them
+                    continue
+
+                out.append({"name": name, "rewards": rewards})
+
+            out.sort(key=lambda x: x["name"])
+            with open(RELICS_OUT, "w", encoding="utf-8") as f:
+                json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
+            print(f"Relics written: {len(out)} -> {RELICS_OUT}")
+            return out
+        else:
+            print("Primary relic source returned empty/unexpected. Falling back...")
+    except Exception as e:
+        print(f"Primary relic source failed: {e}. Falling back...")
+
+    # Fallback: WFCD warframe-items Relics.json
+    print("Downloading relics (fallback: WFCD warframe-items Relics.json)...")
+    payload = http_json(RELICS_JSON_URL)
+
     if isinstance(payload, dict) and "relics" in payload:
         relics = payload["relics"]
     elif isinstance(payload, list):
         relics = payload
     else:
-        raise RuntimeError("Unexpected relic JSON format (expected list or dict with 'relics').")
+        raise RuntimeError("Unexpected relic JSON format from fallback source.")
 
     out = []
     for r in relics:
-        name = r.get("name")
-        rewards = r.get("rewards") or []
+        if not isinstance(r, dict):
+            continue
+        name = normalize_relic_name(r)
+        rewards = normalize_rewards_list(r)
+
         if not name or not rewards:
             continue
 
-        out_rewards = []
-        for rw in rewards:
-            item = rw.get("item") or rw.get("itemName") or rw.get("name")
-            chance = rw.get("chance")
-            rtype = rw.get("rarity") or rw.get("type")
-            if not item:
-                continue
-            out_rewards.append({"item": item, "chance": chance, "type": rtype})
-
-        if out_rewards:
-            out.append({"name": name, "rewards": out_rewards})
+        out.append({"name": name, "rewards": rewards})
 
     out.sort(key=lambda x: x["name"])
-
     with open(RELICS_OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
@@ -105,7 +174,6 @@ def build_wm_name_to_urlname():
     print("Downloading warframe.market item list (name -> url_name)...")
     payload = http_json(WM_ITEMS)
 
-    # Expected: {"payload":{"items":[{"item_name":"...", "url_name":"..."}]}}
     pl = payload.get("payload") if isinstance(payload, dict) else None
     items = (pl or {}).get("items") if isinstance(pl, dict) else None
     if not items:
@@ -124,21 +192,10 @@ def build_wm_name_to_urlname():
 
 # ---------------- warframe.market 90-day median ----------------
 def parse_90d_median(stats_payload: dict):
-    """
-    warframe.market statistics response usually looks like:
-      {"payload":{"statistics_closed":{"90days":[{...,"median":X,...}, ...]}}}
-    Sometimes statistics_live exists too.
-
-    We want: MOST RECENT 90days median.
-    """
-    if not isinstance(stats_payload, dict):
-        return None
-
     pl = stats_payload.get("payload")
     if not isinstance(pl, dict):
         return None
 
-    # prefer "statistics_closed" (completed trades) for more stable median
     stats = pl.get("statistics_closed") or pl.get("statistics_live")
     if not isinstance(stats, dict):
         return None
@@ -147,12 +204,10 @@ def parse_90d_median(stats_payload: dict):
     if not isinstance(arr, list) or not arr:
         return None
 
-    # Take the last element as "most recent" (what WM typically returns)
     last = arr[-1]
     if not isinstance(last, dict):
         return None
 
-    # warframe.market uses key "median"
     med = last.get("median")
     if med is None:
         return None
@@ -173,7 +228,6 @@ def build_prices_from_wm_90d_median(relics_min):
     reward_items = unique_reward_items(relics_min)
     print(f"Unique reward items to price: {len(reward_items)}")
 
-    # Build mapping once
     name_to_url = build_wm_name_to_urlname()
 
     prices = {}
@@ -183,10 +237,8 @@ def build_prices_from_wm_90d_median(relics_min):
 
     for i, item_name in enumerate(reward_items, start=1):
         url_name = name_to_url.get(item_name)
-
         if not url_name:
             missing_map += 1
-            # Skip items WM doesn't know by exact name
             continue
 
         try:
@@ -197,11 +249,9 @@ def build_prices_from_wm_90d_median(relics_min):
                 prices[item_name] = med
                 priced += 1
         except urllib.error.HTTPError as e:
-            # 404 usually means bad endpoint or url_name missing
             if e.code == 404:
                 missing_stats += 1
             else:
-                # other HTTP errors: treat as transient
                 missing_stats += 1
         except Exception:
             missing_stats += 1
@@ -209,7 +259,6 @@ def build_prices_from_wm_90d_median(relics_min):
         if i % 20 == 0:
             print(f"  {i}/{len(reward_items)} checked • priced={priced} • no_map={missing_map} • no_stats={missing_stats}")
 
-        # Be gentle to WM
         time.sleep(0.25)
 
     with open(PRICES_OUT, "w", encoding="utf-8") as f:
@@ -219,7 +268,6 @@ def build_prices_from_wm_90d_median(relics_min):
     print(f"Missing mapping (name not found on WM): {missing_map}")
     print(f"Missing median (no stats / errors): {missing_stats}")
 
-    # If it looks totally broken, fail the workflow so you notice
     if len(prices) < 50:
         raise RuntimeError(
             f"Too few prices ({len(prices)}). "
@@ -233,7 +281,7 @@ def main():
 
     relics_min = build_relics_min()
 
-    # Safety check: if relics are empty, stop (prevents wiping your Relics.min.json to [])
+    # ✅ keep this safety (but now it shouldn't trigger)
     if not relics_min:
         raise RuntimeError("Relics list is empty after parsing. Aborting so we don't publish [].")
 
