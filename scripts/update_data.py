@@ -10,28 +10,68 @@ RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/
 WM_ITEMS_URL = "https://api.warframe.market/v1/items"
 WM_ORDERS_URL = "https://api.warframe.market/v1/items/{}/orders"
 
+# These headers help warframe.market respond correctly (some setups return 404/403 without them)
 HEADERS = {
     "Accept": "application/json",
-    "User-Agent": "mosestyle-warframe-relic-sorter (github actions)"
+    "User-Agent": "Mozilla/5.0 (GitHub Actions; mosestyle relic sorter)",
+    "Platform": "pc",
+    "Language": "en",
 }
 
-def get_json(url):
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read().decode("utf-8"))
+def get_json(url: str):
+    """
+    Fetch JSON from a URL, trying both with and without a trailing slash.
+    This avoids failing hard if a CDN/edge returns 404 on one form.
+    """
+    urls = [url, url.rstrip("/") + "/"]
+    last_err = None
+
+    for u in urls:
+        try:
+            req = urllib.request.Request(u, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=60) as r:
+                raw = r.read().decode("utf-8")
+                return json.loads(raw)
+        except Exception as e:
+            last_err = e
+
+    raise last_err
+
+def extract_items_list(items_json: dict):
+    """
+    warframe.market can return different shapes over time.
+    We accept any of these:
+      payload.items (list)
+      payload.items.en (list)
+      payload.items['en'] (list)
+    """
+    payload = items_json.get("payload", {})
+    items = payload.get("items")
+
+    if isinstance(items, list):
+        return items
+
+    if isinstance(items, dict):
+        for k in ("en", "EN"):
+            v = items.get(k)
+            if isinstance(v, list):
+                return v
+
+    return []
 
 def main():
     print("Downloading relics…")
     relics = get_json(RELICS_URL)
     (DATA_DIR / "Relics.min.json").write_text(json.dumps(relics), encoding="utf-8")
+    print(f"Relics downloaded: {len(relics)}")
 
     print("Downloading warframe.market items list (name->url_name map)…")
     items_list = get_json(WM_ITEMS_URL)
-    # payload.items.en is commonly used
-    en_items = (items_list.get("payload", {}).get("items", {}).get("en", []) or [])
+    items = extract_items_list(items_list)
+    print(f"Items received: {len(items)}")
 
     name_to_url = {}
-    for it in en_items:
+    for it in items:
         name = it.get("item_name")
         url = it.get("url_name")
         if name and url:
@@ -54,7 +94,7 @@ def main():
     prices = {}
     misses = 0
 
-    # Rate limit: be gentle
+    # Be polite to the API to reduce the chance of being rate-limited
     for i, name in enumerate(drop_names, start=1):
         url_name = name_to_url.get(name)
         if not url_name:
@@ -65,7 +105,7 @@ def main():
             orders_json = get_json(WM_ORDERS_URL.format(url_name))
             orders = orders_json.get("payload", {}).get("orders", []) or []
 
-            # filter: visible + platform pc + ingame users (avoid offline spam)
+            # Filter: visible + PC + online/ingame
             filt = []
             for o in orders:
                 if not o.get("visible"):
@@ -77,25 +117,28 @@ def main():
                     continue
                 filt.append(o)
 
-            sells = [o["platinum"] for o in filt if o.get("order_type") == "sell" and isinstance(o.get("platinum"), (int, float))]
-            buys  = [o["platinum"] for o in filt if o.get("order_type") == "buy"  and isinstance(o.get("platinum"), (int, float))]
+            sells = [
+                o.get("platinum") for o in filt
+                if o.get("order_type") == "sell" and isinstance(o.get("platinum"), (int, float))
+            ]
 
-            # Choose ONE pricing rule. This one is "lowest sell" (common for quick compare).
-            # If you prefer "highest buy", swap to: price = max(buys) if buys else None
-            price = min(sells) if sells else None
-
-            if price is not None:
-                prices[name] = int(round(price))
+            # Pricing rule: lowest sell
+            if sells:
+                prices[name] = int(round(min(sells)))
 
         except Exception:
-            # skip on any network/API error
+            # Skip on any temporary network/API problems
             pass
 
-        if i % 50 == 0:
+        if i % 40 == 0:
             print(f"Processed {i}/{len(drop_names)}")
             time.sleep(0.6)
 
-    (DATA_DIR / "prices.json").write_text(json.dumps(prices, ensure_ascii=False, indent=2), encoding="utf-8")
+    (DATA_DIR / "prices.json").write_text(
+        json.dumps(prices, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
     print(f"Saved prices for: {len(prices)} items")
     print(f"Name->url misses: {misses}")
 
