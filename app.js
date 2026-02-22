@@ -1,9 +1,13 @@
+// app.js — Modal picker UI + prices from data/prices.json ONLY.
+// Uses data/meta.json for "Last generated" date.
+
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
 let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
+const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
 
@@ -28,16 +32,15 @@ function rarityToLabel(r) {
   return String(r ?? "");
 }
 
-// ---------------- Natural relic sorting ----------------
+// ---------- Natural relic sorting (A1, A2, ... A10) ----------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
   const s = (str || "").trim().replace(/\s+/g, " ");
   const m = s.match(/^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$/);
-  if (!m) return { era: "", code: s, letters: s, num: 0, tail: "" };
+  if (!m) return { era: "", letters: s, num: 0, tail: "" };
   return {
     era: m[1],
-    code: `${m[2]}${m[3]}${m[4] || ""}`,
     letters: m[2],
     num: parseInt(m[3], 10) || 0,
     tail: m[4] || ""
@@ -220,13 +223,7 @@ function setFooter() {
   const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
   const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
 
-  // Same row, far right
-  footer.innerHTML = `
-    <div style="display:flex; justify-content:space-between; gap:12px; align-items:center;">
-      <div>${left}</div>
-      <div style="opacity:.9;">${right}</div>
-    </div>
-  `;
+  footer.innerHTML = `<span>${left}</span><span>${right}</span>`;
 }
 
 // ---------------- Boot ----------------
@@ -251,9 +248,9 @@ async function boot() {
   }
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
-
   setFooter();
 
+  // Bind modal UI
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
@@ -268,7 +265,7 @@ async function boot() {
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
       const el = $(id);
       if (el) {
-        el.textContent = "Tap to choose (Lith/Meso/Neo/Axi)";
+        el.textContent = PICKER_DEFAULT;
         el.classList.add("pickerPlaceholder");
       }
     });
