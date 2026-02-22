@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Moses - Warframe Relic Reward Value</title>
   <link rel="stylesheet" href="style.css" />
+
+  <!-- Robust placeholder suffix: shows (Lith/Meso/Neo/Axi) whenever placeholder style is active -->
+  <style>
+    .pickerPlaceholder::after { content: " (Lith/Meso/Neo/Axi)"; }
+  </style>
 </head>
 <body>
   <header class="wrap">
@@ -17,7 +22,7 @@
       <div class="field">
         <label>Relic 1</label>
         <button class="pickerBtn" data-target="r1" type="button">
-          <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r1Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -25,7 +30,7 @@
       <div class="field">
         <label>Relic 2</label>
         <button class="pickerBtn" data-target="r2" type="button">
-          <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r2Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -33,7 +38,7 @@
       <div class="field">
         <label>Relic 3</label>
         <button class="pickerBtn" data-target="r3" type="button">
-          <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r3Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -41,7 +46,7 @@
       <div class="field">
         <label>Relic 4</label>
         <button class="pickerBtn" data-target="r4" type="button">
-          <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span id="r4Text" class="pickerPlaceholder">Tap to choose</span>
           <span class="chev">▾</span>
         </button>
       </div>
@@ -53,12 +58,15 @@
       <div class="status" id="status"></div>
     </section>
 
-    <!-- Results (cards for mobile) -->
     <section class="results">
       <div id="cards"></div>
     </section>
 
-    <footer class="muted small" id="footer"></footer>
+    <!-- Footer: keep same UI, but now with two spans so we can fill the right side reliably -->
+    <footer class="muted small" id="footer" style="display:flex;justify-content:space-between;gap:12px;">
+      <span id="footerLeft"></span>
+      <span id="footerRight"></span>
+    </footer>
   </main>
 
   <!-- Fullscreen Relic Picker -->
@@ -74,6 +82,20 @@
 
     <div id="modalList" class="modalList"></div>
   </div>
+
+  <!-- Independent "Last generated" loader (works even if app.js is cached/old) -->
+  <script>
+    (async () => {
+      try {
+        const r = await fetch("./data/meta.json", { cache: "no-store" });
+        const meta = await r.json();
+        const el = document.getElementById("footerRight");
+        if (el && meta && meta.generated_at) el.textContent = "Last generated: " + meta.generated_at;
+      } catch (e) {
+        // ignore
+      }
+    })();
+  </script>
 
   <script src="app.js"></script>
 </body>
