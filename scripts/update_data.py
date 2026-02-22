@@ -10,8 +10,8 @@ DATA_DIR = "data"
 RELICS_OUT = os.path.join(DATA_DIR, "Relics.min.json")
 PRICES_OUT = os.path.join(DATA_DIR, "prices.json")
 
-# Relic source (keep this one if it already works for you)
-RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-items/master/data/json/Relics.json"
+# ✅ Correct relic source (this one actually contains the relic list you were using before)
+RELICS_URL = "https://raw.githubusercontent.com/WFCD/warframe-relic-data/master/data/Relics.min.json"
 
 # Warframe Analytics endpoints
 ITEMS_PAGED = "https://warframe-analytics.com/api/v1/items/paged"
@@ -41,28 +41,26 @@ def build_relics_min():
     print("Downloading relics...")
     payload = http_json(RELICS_URL)
 
-    # WFCD Relics.json can be a dict {"relics":[...]} OR a list directly
-    if isinstance(payload, dict) and "relics" in payload:
-        relics = payload["relics"]
-    elif isinstance(payload, list):
-        relics = payload
-    else:
-        raise RuntimeError("Unexpected relic JSON format")
+    # WFCD relic-data Relics.min.json is a LIST
+    if not isinstance(payload, list):
+        raise RuntimeError("Unexpected relic JSON format (expected a list)")
 
     out = []
-    for r in relics:
+    for r in payload:
         name = r.get("name")
-        rewards = r.get("rewards") or []
+        rewards = r.get("rewards") or r.get("drops") or []
         if not name or not rewards:
             continue
 
         out_rewards = []
         for rw in rewards:
-            item = rw.get("item") or rw.get("itemName") or rw.get("name")
+            item = rw.get("item") or rw.get("name")
             chance = rw.get("chance")
-            rtype = rw.get("rarity") or rw.get("type")
+            rtype = rw.get("type") or rw.get("rarity")
+
             if not item:
                 continue
+
             out_rewards.append({"item": item, "chance": chance, "type": rtype})
 
         if out_rewards:
@@ -74,6 +72,11 @@ def build_relics_min():
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
 
     print(f"Relics written: {len(out)} -> {RELICS_OUT}")
+
+    # Fail fast if something went wrong so you don't deploy an empty relic list
+    if len(out) < 50:
+        raise RuntimeError(f"Relics output looks wrong (only {len(out)} relics).")
+
     return out
 
 
