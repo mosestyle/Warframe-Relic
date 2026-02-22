@@ -1,5 +1,4 @@
 // app.js — Modal picker UI + prices from data/prices.json ONLY.
-// No caching tricks. No layout changes.
 
 let RELICS = [];
 let PRICES = {};
@@ -7,6 +6,7 @@ let RELIC_NAMES = [];
 let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
+const PLACEHOLDER_BASE = "Tap to choose";
 
 const $ = (id) => document.getElementById(id);
 
@@ -215,19 +215,11 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-// ---------------- Footer ----------------
+// Footer: populate left stats into the new spans if present
 function updateFooter() {
-  const footer = $("footer");
-  if (!footer) return;
-
   const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
-  const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
-
-  footer.style.display = "flex";
-  footer.style.justifyContent = "space-between";
-  footer.style.gap = "12px";
-
-  footer.innerHTML = `<span>${left}</span><span>${right}</span>`;
+  const leftEl = $("footerLeft");
+  if (leftEl) leftEl.textContent = left;
 }
 
 // ---------------- Boot ----------------
@@ -244,13 +236,6 @@ async function boot() {
     PRICES = {};
   }
 
-  try {
-    const metaRes = await fetch("./data/meta.json", { cache: "no-store" });
-    META = await metaRes.json();
-  } catch {
-    META = null;
-  }
-
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
   updateFooter();
@@ -264,7 +249,6 @@ async function boot() {
 
   $("btnShow")?.addEventListener("click", showRewards);
 
-  // 🔥 THIS IS THE FIXED CLEAR BUTTON
   $("btnClear")?.addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
 
@@ -272,9 +256,8 @@ async function boot() {
     for (const id of ids) {
       const el = document.getElementById(id);
       if (!el) continue;
-
-      el.textContent = "Tap to choose (Lith/Meso/Neo/Axi)";
-      el.classList.add("pickerPlaceholder");
+      el.textContent = PLACEHOLDER_BASE;      // CSS adds the suffix
+      el.classList.add("pickerPlaceholder");  // makes suffix appear
     }
 
     const cards = $("cards");
