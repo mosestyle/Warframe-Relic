@@ -268,7 +268,7 @@ async function boot() {
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
       const el = $(id);
       if (el) {
-        el.textContent = "Tap to choose";
+        el.textContent = "Tap to choose (Lith/Meso/Neo/Axi)";
         el.classList.add("pickerPlaceholder");
       }
     });
