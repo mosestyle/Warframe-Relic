@@ -1,6 +1,3 @@
-// app.js — Modal picker UI + prices from data/prices.json ONLY.
-// Uses data/meta.json for "Last generated" date.
-
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
@@ -32,7 +29,7 @@ function rarityToLabel(r) {
   return String(r ?? "");
 }
 
-// ---------- Natural relic sorting (A1, A2, ... A10) ----------
+// Natural relic sorting: A1, A2, ... A10
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
@@ -66,38 +63,24 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Modal picker ----------------
+// Modal
 let modalTarget = null;
 
 function openModal(targetKey) {
-  const modal = $("modal");
-  if (!modal) return;
-
   modalTarget = targetKey;
-
-  const title = $("modalTitle");
-  if (title) title.textContent = "Choose relic";
-
-  const search = $("modalSearch");
-  if (search) search.value = "";
-
+  $("modalSearch").value = "";
   renderModalList("");
-
-  modal.classList.remove("hidden");
-  setTimeout(() => search?.focus(), 60);
+  $("modal").classList.remove("hidden");
+  setTimeout(() => $("modalSearch")?.focus(), 60);
 }
 
 function closeModal() {
-  const modal = $("modal");
-  if (!modal) return;
-  modal.classList.add("hidden");
+  $("modal").classList.add("hidden");
   modalTarget = null;
 }
 
 function renderModalList(filter) {
   const listEl = $("modalList");
-  if (!listEl) return;
-
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
@@ -111,7 +94,6 @@ function renderModalList(filter) {
     row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
     row.addEventListener("click", () => {
       if (!modalTarget) return;
-
       state[modalTarget] = name;
 
       const tEl = $(`${modalTarget}Text`);
@@ -119,14 +101,13 @@ function renderModalList(filter) {
         tEl.textContent = name;
         tEl.classList.remove("pickerPlaceholder");
       }
-
       closeModal();
     });
     listEl.appendChild(row);
   }
 }
 
-// ---------------- Rewards render ----------------
+// Rewards
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
 
@@ -169,8 +150,6 @@ function mergeAndSortRewards(relicsPicked) {
 
 function renderCards(list) {
   const cardsEl = $("cards");
-  if (!cardsEl) return;
-
   cardsEl.innerHTML = "";
   for (const e of list) {
     const div = document.createElement("div");
@@ -218,15 +197,11 @@ function showRewards() {
 
 function setFooter() {
   const footer = $("footer");
-  if (!footer) return;
-
   const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
   const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
-
   footer.innerHTML = `<span>${left}</span><span>${right}</span>`;
 }
 
-// ---------------- Boot ----------------
 async function boot() {
   setStatus("Loading…");
 
@@ -250,16 +225,16 @@ async function boot() {
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
   setFooter();
 
-  // Bind modal UI
-  $("modalClose")?.addEventListener("click", closeModal);
-  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
+  $("modalClose").addEventListener("click", closeModal);
+  $("modalSearch").addEventListener("input", (e) => renderModalList(e.target.value));
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
   });
 
-  $("btnShow")?.addEventListener("click", showRewards);
-  $("btnClear")?.addEventListener("click", () => {
+  $("btnShow").addEventListener("click", showRewards);
+
+  $("btnClear").addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
 
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
@@ -270,7 +245,7 @@ async function boot() {
       }
     });
 
-    $("cards") && ($("cards").innerHTML = "");
+    $("cards").innerHTML = "";
     setStatus("Cleared");
   });
 
