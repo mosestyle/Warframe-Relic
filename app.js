@@ -1,14 +1,11 @@
-// app.js — Modal picker UI + prices from data/prices.json ONLY.
-// No caching, no client-side price fetching.
-
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
+let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
 
 const $ = (id) => document.getElementById(id);
-const norm = (s) => (s || "").trim();
 
 function setStatus(msg) {
   const el = $("status");
@@ -35,7 +32,6 @@ function rarityToLabel(r) {
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
-  // "Axi A20" -> { era:"Axi", code:"A20", letters:"A", num:20, tail:"" }
   const s = (str || "").trim().replace(/\s+/g, " ");
   const m = s.match(/^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$/);
   if (!m) return { era: "", code: s, letters: s, num: 0, tail: "" };
@@ -56,18 +52,14 @@ function relicNaturalCompare(a, b) {
   const eraB = ERA_ORDER[B.era] ?? 99;
   if (eraA !== eraB) return eraA - eraB;
 
-  // Compare letters (A/B/C…)
   const lc = A.letters.localeCompare(B.letters, undefined, { sensitivity: "base" });
   if (lc !== 0) return lc;
 
-  // Compare numeric portion naturally
   if (A.num !== B.num) return A.num - B.num;
 
-  // Compare tail (rare cases)
   const tc = A.tail.localeCompare(B.tail, undefined, { sensitivity: "base" });
   if (tc !== 0) return tc;
 
-  // Final fallback
   return a.localeCompare(b);
 }
 
@@ -221,6 +213,22 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
+function setFooter() {
+  const footer = $("footer");
+  if (!footer) return;
+
+  const left = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+  const right = META?.generated_at ? `Last generated: ${META.generated_at}` : "";
+
+  // Same row, far right
+  footer.innerHTML = `
+    <div style="display:flex; justify-content:space-between; gap:12px; align-items:center;">
+      <div>${left}</div>
+      <div style="opacity:.9;">${right}</div>
+    </div>
+  `;
+}
+
 // ---------------- Boot ----------------
 async function boot() {
   setStatus("Loading…");
@@ -235,10 +243,16 @@ async function boot() {
     PRICES = {};
   }
 
+  try {
+    const metaRes = await fetch("./data/meta.json", { cache: "no-store" });
+    META = await metaRes.json();
+  } catch {
+    META = null;
+  }
+
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
-  const footer = $("footer");
-  if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+  setFooter();
 
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
