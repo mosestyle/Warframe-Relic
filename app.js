@@ -3,6 +3,7 @@
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
+let VAULT_STATUS = null; // { "Lith K12": true/false } true = available
 
 const state = { r1: null, r2: null, r3: null, r4: null };
 const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
@@ -69,7 +70,7 @@ function relicNaturalCompare(a, b) {
   const tc = A.tail.localeCompare(B.tail, undefined, { sensitivity: "base" });
   if (tc !== 0) return tc;
 
-  return a.localeCompare(b);
+  return a.localeCompare(a);
 }
 
 // ---------------- Item -> relic index ----------------
@@ -376,7 +377,7 @@ function mergeAndSortRewards(relicsPicked) {
 
   const final = [...merged.values()].map(x => ({
     item: x.item,
-    from: [...x.fromSet].join(", "),
+    fromList: [...x.fromSet].sort(relicNaturalCompare),
     rarity: x.rarity,
     plat: x.plat
   }));
@@ -385,12 +386,27 @@ function mergeAndSortRewards(relicsPicked) {
   return final;
 }
 
+function relicClass(relicName) {
+  if (!VAULT_STATUS || typeof VAULT_STATUS[relicName] !== "boolean") return "";
+  return VAULT_STATUS[relicName] ? "relicAvail" : "relicVault";
+}
+
+function renderFromList(fromList) {
+  return fromList
+    .map(rname => {
+      const cls = relicClass(rname);
+      return cls ? `<span class="${cls}">${rname}</span>` : rname;
+    })
+    .join(", ");
+}
+
 function renderCards(list) {
   const cardsEl = $("cards");
   if (!cardsEl) return;
 
   cardsEl.innerHTML = "";
   for (const e of list) {
+    const fromHtml = renderFromList(e.fromList || []);
     const div = document.createElement("div");
     div.className = "cardRow";
     div.innerHTML = `
@@ -398,7 +414,7 @@ function renderCards(list) {
         <div class="itemName">${e.item}</div>
         <div class="itemMeta">
           <span class="badge">${e.rarity || ""}</span>
-          <span>${e.from}</span>
+          <span>${fromHtml}</span>
         </div>
       </div>
       <div class="cardRight">
@@ -448,6 +464,14 @@ async function boot() {
     PRICES = {};
   }
 
+  // NEW: load vault status from wiki-generated file (optional)
+  try {
+    const vaultRes = await fetch("./data/vaultStatus.json", { cache: "no-store" });
+    VAULT_STATUS = await vaultRes.json();
+  } catch {
+    VAULT_STATUS = null;
+  }
+
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
   // Build item index once
@@ -459,7 +483,7 @@ async function boot() {
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
-  // NEW: two separate mode buttons
+  // two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
   $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
 
@@ -483,6 +507,9 @@ async function boot() {
     $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
+
+  // Ensure initial active button state
+  setSearchMode("relic");
 
   setStatus("Ready");
 }
