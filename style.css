@@ -93,3 +93,19 @@ button.ghost { background: transparent; }
 }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
+
+/* ✅ NEW: Toggle button (top-right in modal header) */
+.modeToggle{
+  margin-left:auto;
+  height:42px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border:1px solid var(--line);
+  background:#0e1420;
+  color:var(--text);
+  font-weight:600;
+}
+.modeToggle[data-mode="items"]{
+  background:#1b2a48;
+  border-color:#2a3a5e;
+}
