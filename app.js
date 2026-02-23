@@ -26,24 +26,15 @@ function platForItem(itemName) {
   return (typeof v === "number") ? v : null;
 }
 
-/* ===========================
-   UPDATED RARITY FUNCTION
-=========================== */
+// Rarity badge format: Rare (2%), Uncommon (11%), Common (25%)
 function rarityToLabel(r) {
   const val = Number(r);
   if (isNaN(val)) return "";
 
-  // Round to avoid ugly decimals like 25.333333
   const rounded = Math.round(val * 100) / 100;
 
-  if (rounded <= 2.5) {
-    return `Rare (${rounded}%)`;
-  }
-
-  if (rounded <= 15) {
-    return `Uncommon (${rounded}%)`;
-  }
-
+  if (rounded <= 2.5) return `Rare (${rounded}%)`;
+  if (rounded <= 15) return `Uncommon (${rounded}%)`;
   return `Common (${rounded}%)`;
 }
 
@@ -82,8 +73,58 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Modal picker ----------------
+// ---------------- Item -> relic index (for Items search mode) ----------------
+let ITEM_TO_RELICS = null;
+
+function buildItemIndex() {
+  // Map: lowercase item name -> { displayName, entries: [{ relicName, rarityLabel }] }
+  const map = new Map();
+
+  for (const r of RELICS) {
+    const rname = relicDisplayName(r);
+    const drops = r.drops ?? r.rewards ?? [];
+
+    for (const d of drops) {
+      const item = (d.item ?? d.name ?? d.reward ?? "").trim();
+      if (!item) continue;
+
+      const rarityLabel = rarityToLabel(d.rarity ?? d.chance ?? d.tier ?? "");
+      const key = item.toLowerCase();
+
+      if (!map.has(key)) {
+        map.set(key, { displayName: item, entries: [] });
+      }
+      map.get(key).entries.push({ relicName: rname, rarityLabel });
+    }
+  }
+
+  ITEM_TO_RELICS = map;
+}
+
+// ---------------- Modal picker + toggle mode ----------------
 let modalTarget = null;
+let SEARCH_MODE = "relic"; // default
+
+function setSearchMode(mode) {
+  SEARCH_MODE = (mode === "items") ? "items" : "relic";
+
+  const btn = $("modeToggle");
+  if (btn) {
+    btn.textContent = (SEARCH_MODE === "items") ? "Items" : "Relics";
+    btn.dataset.mode = SEARCH_MODE;
+    btn.setAttribute("aria-pressed", SEARCH_MODE === "items" ? "true" : "false");
+  }
+
+  const search = $("modalSearch");
+  if (search) {
+    search.placeholder =
+      (SEARCH_MODE === "items")
+        ? "Search item: e.g. Wisp Prime Chassis Blueprint"
+        : "Search: e.g. Meso C1 / Neo N16 / Axi S18";
+  }
+
+  renderModalList($("modalSearch")?.value || "");
+}
 
 function openModal(targetKey) {
   const modal = $("modal");
@@ -97,7 +138,8 @@ function openModal(targetKey) {
   const search = $("modalSearch");
   if (search) search.value = "";
 
-  renderModalList("");
+  // Always open default mode = Relics (as you requested)
+  setSearchMode("relic");
 
   modal.classList.remove("hidden");
   setTimeout(() => search?.focus(), 60);
@@ -117,6 +159,68 @@ function renderModalList(filter) {
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
+  // ---------- ITEMS MODE ----------
+  if (SEARCH_MODE === "items") {
+    if (!q) {
+      const row = document.createElement("div");
+      row.className = "modalItem";
+      row.innerHTML = `<strong>Type an item name</strong><span>Example: Wisp Prime Chassis Blueprint</span>`;
+      listEl.appendChild(row);
+      return;
+    }
+
+    if (!ITEM_TO_RELICS) buildItemIndex();
+
+    const matches = [];
+    for (const [key, info] of ITEM_TO_RELICS.entries()) {
+      if (key.includes(q)) matches.push(info);
+      if (matches.length >= 50) break;
+    }
+
+    if (matches.length === 0) {
+      const row = document.createElement("div");
+      row.className = "modalItem";
+      row.innerHTML = `<strong>No item match</strong><span>Try shorter (e.g. wisp chassis)</span>`;
+      listEl.appendChild(row);
+      return;
+    }
+
+    // Show top results; each row includes which relics contain it
+    for (const info of matches.slice(0, 12)) {
+      const relicList = info.entries
+        .slice(0, 6)
+        .map(e => `${e.relicName}${e.rarityLabel ? ` • ${e.rarityLabel}` : ""}`)
+        .join(" | ");
+
+      const row = document.createElement("div");
+      row.className = "modalItem";
+      row.innerHTML = `<strong>${info.displayName}</strong><span>${relicList}</span>`;
+
+      // Click selects the first relic containing that item (fast UX)
+      row.addEventListener("click", () => {
+        if (!modalTarget) return;
+
+        const firstRelic = info.entries[0]?.relicName;
+        if (!firstRelic) return;
+
+        state[modalTarget] = firstRelic;
+
+        const tEl = $(`${modalTarget}Text`);
+        if (tEl) {
+          tEl.textContent = firstRelic;
+          tEl.classList.remove("pickerPlaceholder");
+        }
+
+        closeModal();
+      });
+
+      listEl.appendChild(row);
+    }
+
+    return;
+  }
+
+  // ---------- RELICS MODE (UNCHANGED BEHAVIOR) ----------
   const list = q
     ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 800)
     : RELIC_NAMES.slice(0, 800);
@@ -248,11 +352,19 @@ async function boot() {
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
+  // Build item index once (only used when toggled to Items)
+  buildItemIndex();
+
   const footer = $("footer");
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
+
+  // NEW: toggle Relics/Items
+  $("modeToggle")?.addEventListener("click", () => {
+    setSearchMode(SEARCH_MODE === "relic" ? "items" : "relic");
+  });
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
