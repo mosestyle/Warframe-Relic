@@ -1,0 +1,55 @@
+name: Update Relic + Price Data (Weekly)
+
+on:
+  schedule:
+    # GitHub cron is UTC.
+    # Sweden time 21:00 is:
+    # - 20:00 UTC during CET (winter)
+    # - 19:00 UTC during CEST (summer)
+    #
+    # This schedule uses 20:00 UTC every Sunday.
+    # In summer it will run at 22:00 Sweden time.
+    - cron: "0 20 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate data (Relics + Prices)
+        run: |
+          python scripts/update_data.py
+          echo "=== data folder contents ==="
+          ls -la data || true
+          echo "=== scripts folder contents ==="
+          ls -la scripts || true
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add data/*.json data/*.min.json data/*.txt data/*.md 2>/dev/null || true
+          git add data/* 2>/dev/null || true
+          git add scripts/missing_prices.txt 2>/dev/null || true
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update relic + price data"
+          git push
