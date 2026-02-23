@@ -1,91 +1,80 @@
-#!/usr/bin/env python3
 import json
-import os
 import re
-import urllib.request
-from typing import Any, Dict, Set
-
+import sys
+from datetime import datetime, timezone
+from urllib.request import Request, urlopen
 
 WIKI_URL = "https://wiki.warframe.com/w/Void_Relic"
 
-DATA_DIR = "data"
-RELICS_MIN_PATH = os.path.join(DATA_DIR, "Relics.min.json")
-VAULT_STATUS_OUT = os.path.join(DATA_DIR, "vaultStatus.json")
-ACTIVE_RELICS_OUT = os.path.join(DATA_DIR, "activeRelics.json")
+# We only need the "Unvaulted/Available Relics" section text.
+# We'll parse relic tokens like "Lith K12", "Meso A9", "Neo C7", "Axi S18".
+RELIC_RE = re.compile(r"\b(Lith|Meso|Neo|Axi)\s+([A-Z]\d{1,2})\b")
 
-
-def http_get(url: str, timeout: int = 40) -> str:
-    req = urllib.request.Request(
+def fetch_html(url: str) -> str:
+    req = Request(
         url,
         headers={
-            "User-Agent": "mosestyle-warframe-relic/1.0 (+github actions)",
-            "Accept": "text/html,application/xhtml+xml",
-        },
+            "User-Agent": "mosestyle-warframe-relic/1.0 (+https://mosestyle.github.io/Warframe-Relic/)"
+        }
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read()
-    return raw.decode("utf-8", errors="replace")
+    with urlopen(req, timeout=30) as resp:
+        return resp.read().decode("utf-8", errors="replace")
 
+def extract_available_relics(html: str) -> set[str]:
+    # Heuristic: find the "Unvaulted/Available Relics" heading area.
+    # The page HTML changes sometimes, so we:
+    # 1) narrow to a chunk around the phrase
+    # 2) regex relic tokens inside that chunk
+    needle = "Unvaulted/Available Relics"
+    idx = html.find(needle)
+    if idx == -1:
+        # fallback: parse whole page
+        chunk = html
+    else:
+        # take a big window after the heading
+        chunk = html[idx: idx + 200000]
 
-def extract_available_relics_from_wiki(html: str) -> Set[str]:
-    """
-    Extract relic names from the Wiki 'Void Relic' page.
+    found = set()
+    for era, code in RELIC_RE.findall(chunk):
+        found.add(f"{era} {code}")
 
-    We focus on the 'Unvaulted/Available Relics' table section by taking a large chunk
-    after that heading. Then we regex-match relic names like:
-      Lith K12, Meso C1, Neo N16, Axi A20
+    return found
 
-    Returns a set of full names e.g. "Lith K12".
-    """
-    # Try to locate the "Unvaulted/Available Relics" area; if it moves, still works.
-    m = re.search(r"Unvaulted\s*/\s*Available\s*Relics", html, flags=re.IGNORECASE)
-    chunk = html[m.start():m.start() + 150000] if m else html
+def main():
+    try:
+        html = fetch_html(WIKI_URL)
+    except Exception as e:
+        print(f"ERROR: failed to fetch wiki: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    relic_re = re.compile(r"\b(Lith|Meso|Neo|Axi)\s+([A-Za-z]+)(\d+)([A-Za-z]*)\b")
-    out = set()
-    for era, letters, num, tail in relic_re.findall(chunk):
-        out.add(f"{era} {letters}{num}{tail}".strip())
-    return out
+    available = extract_available_relics(html)
 
-
-def relic_display_name(r: Dict[str, Any]) -> str:
-    # Your Relics.min.json objects look like: {"tier":"Lith","name":"K12",...}
-    tier = (r.get("tier") or r.get("era") or "").strip()
-    name = (r.get("name") or r.get("relicName") or r.get("code") or "").strip()
-    return f"{tier} {name}".strip()
-
-
-def main() -> None:
-    if not os.path.exists(RELICS_MIN_PATH):
-        raise RuntimeError(
-            f"Missing {RELICS_MIN_PATH}. Run your WFCD relic build workflow first."
+    if len(available) < 10:
+        # Safety check: if parsing fails, don't overwrite with nonsense.
+        print(
+            f"ERROR: parsed too few available relics ({len(available)}). "
+            f"Wiki layout may have changed.",
+            file=sys.stderr
         )
+        sys.exit(1)
 
-    print(f"Fetching wiki: {WIKI_URL}")
-    html = http_get(WIKI_URL)
-    available = extract_available_relics_from_wiki(html)
-    print(f"Available relics found on wiki: {len(available)}")
+    # Output format: {"Lith K12": true, "Meso A9": true, ...}
+    out = {name: True for name in sorted(available)}
 
-    with open(RELICS_MIN_PATH, "r", encoding="utf-8") as f:
-        relics = json.load(f)
+    # Also include a tiny meta field for debugging if you want later
+    payload = {
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "available": out
+    }
 
-    # Map every relic you have -> available True/False
-    vault_status: Dict[str, bool] = {}
-    for r in relics:
-        name = relic_display_name(r)
-        if not name:
-            continue
-        vault_status[name] = (name in available)
+    # Write to data/vaultStatus.json
+    # IMPORTANT: The site code can support either:
+    # - dict direct, or {available:{...}}
+    # We'll write {available:{...}} + generated_at
+    with open("data/vaultStatus.json", "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
 
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(VAULT_STATUS_OUT, "w", encoding="utf-8") as f:
-        json.dump(vault_status, f, ensure_ascii=False, separators=(",", ":"))
-    with open(ACTIVE_RELICS_OUT, "w", encoding="utf-8") as f:
-        json.dump(sorted(available), f, ensure_ascii=False, indent=2)
-
-    print(f"Wrote {VAULT_STATUS_OUT} with {len(vault_status)} entries")
-    print(f"Wrote {ACTIVE_RELICS_OUT} with {len(available)} relics")
-
+    print(f"vaultStatus.json written: {len(out)} available relics")
 
 if __name__ == "__main__":
     main()
