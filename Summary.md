@@ -1,8 +1,3 @@
-Love this idea — smart move 👌
-Having a clean project summary will make future ChatGPT sessions MUCH easier.
-
-Below is a **clear, structured description + summary** you can save and reuse.
-
 ---
 
 # 📌 Project Description
