@@ -3,20 +3,21 @@ import json
 import os
 import re
 import time
-import html
 import urllib.request
 import urllib.error
 from datetime import datetime
-from typing import Any, Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 
 DATA_DIR = "data"
 RELICS_IN = os.path.join(DATA_DIR, "Relics.min.json")
 VAULT_OUT = os.path.join(DATA_DIR, "vaultStatus.json")
 
-# NOTE:
-# You asked for https://wiki.warframe.com/w/Void_Relic, but that site is often not friendly to automated fetches.
-# The Fandom page contains the exact "Unvaulted/Available Relics" list and is reliably fetchable in GitHub Actions.
-WIKI_URL = "https://warframe.fandom.com/wiki/Void_Relic"
+# Use the official Warframe wiki (NOT Fandom) to avoid 403 in GitHub Actions.
+WIKI_URLS = [
+    "https://wiki.warframe.com/w/Void_Relic",
+    # optional fallback in case the first URL ever changes
+    "https://wiki.warframe.com/w/Void_Relic?redirect=no",
+]
 
 UA = "mosestyle-warframe-relic/vaulter (+github actions)"
 HTTP_TIMEOUT = 60
@@ -40,11 +41,10 @@ def http_text(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> str:
                 },
             )
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                raw = r.read().decode("utf-8", errors="replace")
-                return raw
+                return r.read().decode("utf-8", errors="replace")
         except urllib.error.HTTPError as e:
             last_err = e
-            # Retry transient errors
+            # retry transient errors
             if e.code in (429, 500, 502, 503, 504):
                 time.sleep(1.5 ** i)
                 continue
@@ -52,33 +52,33 @@ def http_text(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> str:
         except Exception as e:
             last_err = e
             time.sleep(1.5 ** i)
+
     if last_err:
         raise last_err
     raise RuntimeError("http_text failed with unknown error")
 
 
-# ---- Natural relic ordering (same idea as in your app.js) ----
+# ---- Natural relic ordering (same idea as your app.js) ----
 ERA_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3, "Requiem": 4}
 
 
-def parse_relic_name(s: str) -> Tuple[int, str, int, str]:
+def parse_relic_name(s: str) -> Tuple[int, str, int, str, str]:
     """
-    "Axi A20" -> (eraOrder, letters, num, tail)
+    "Axi A20" -> (eraOrder, letters, num, tail, original)
     """
     s = (s or "").strip()
     m = re.match(r"^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$", s)
     if not m:
-        return (999, s, 0, "")
+        return (999, s, 0, "", s)
     era = m.group(1)
     letters = m.group(2)
     num = int(m.group(3)) if m.group(3).isdigit() else 0
     tail = m.group(4) or ""
-    return (ERA_ORDER.get(era, 99), letters.upper(), num, tail.upper())
+    return (ERA_ORDER.get(era, 99), letters.upper(), num, tail.upper(), s)
 
 
 def relic_sort_key(name: str):
-    era_ord, letters, num, tail = parse_relic_name(name)
-    return (era_ord, letters, num, tail, name)
+    return parse_relic_name(name)
 
 
 def load_relic_names_from_relics_min() -> List[str]:
@@ -93,69 +93,73 @@ def load_relic_names_from_relics_min() -> List[str]:
         nm = (r.get("name") or r.get("relicName") or r.get("code") or "").strip()
         if tier and nm:
             names.append(f"{tier} {nm}".strip())
+
     return sorted(set(names), key=relic_sort_key)
 
 
-def extract_unvaulted_available_relics(html_text: str) -> Set[str]:
+def extract_unvaulted_available_relics(page_html: str) -> Set[str]:
     """
-    Extract ONLY the relic names listed in the "Unvaulted/Available Relics" section.
-    We intentionally *do not* scrape the entire page for relic-like strings.
+    Extract ONLY relic names in the 'Unvaulted/Available Relics' table area.
     """
-    t = html_text
-
-    # Make it easier to regex: unescape entities and collapse whitespace
-    t = html.unescape(t)
+    t = page_html
     t = re.sub(r"\s+", " ", t)
 
-    # Find the section near "Unvaulted/Available Relics"
-    idx = t.lower().find("unvaulted/available relics".lower())
+    # locate the section
+    idx = t.lower().find("unvaulted/available relics")
     if idx == -1:
         return set()
 
-    # Take a limited window after that phrase to avoid catching the whole page
-    window = t[idx : idx + 20000]
+    # narrow window to avoid catching the whole page
+    window = t[idx : idx + 25000]
 
-    # Relic name pattern like "Lith K12"
-    # This will only match inside that window.
+    # match "Lith K12" etc
     pat = re.compile(r"\b(Lith|Meso|Neo|Axi|Requiem)\s+([A-Za-z]+\d+[A-Za-z]*)\b")
     found = set()
     for era, code in pat.findall(window):
         found.add(f"{era} {code}")
-
     return found
+
+
+def fetch_available_set() -> Set[str]:
+    last_err = None
+    for url in WIKI_URLS:
+        try:
+            print(f"Fetching Unvaulted/Available relic list from: {url}")
+            page = http_text(url)
+            s = extract_unvaulted_available_relics(page)
+            if s:
+                return s
+            last_err = RuntimeError("Could not find 'Unvaulted/Available Relics' section.")
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err or RuntimeError("Failed to fetch available relic list from all sources.")
 
 
 def main():
     ensure_data_dir()
 
     if not os.path.exists(RELICS_IN):
-        raise RuntimeError(f"Missing {RELICS_IN}. Run update_data.py workflow first.")
+        raise RuntimeError(f"Missing {RELICS_IN}. Run your Update Relics + Prices workflow first.")
 
     all_relics = load_relic_names_from_relics_min()
     print(f"Relics loaded: {len(all_relics)}")
 
-    print(f"Fetching Unvaulted/Available relic list from: {WIKI_URL}")
-    page = http_text(WIKI_URL)
+    available_set = fetch_available_set()
+    print(f"Available relics found in wiki table: {len(available_set)}")
 
-    available_set = extract_unvaulted_available_relics(page)
-    print(f"Available relics found in table: {len(available_set)}")
-
+    # Safety check: if wiki layout changes, avoid publishing nonsense
     if len(available_set) < 10:
-        # Safety: if the page layout changed or we got blocked, don't publish nonsense
-        raise RuntimeError(
-            f"Too few available relics detected ({len(available_set)}). Page structure may have changed."
-        )
+        raise RuntimeError(f"Too few available relics detected ({len(available_set)}). Wiki structure may have changed.")
 
-    # Build FULL mapping for every relic we have:
-    # true = available/unvaulted (in table)
-    # false = everything else
+    # Build full mapping
     mapping: Dict[str, bool] = {}
     for name in sorted(all_relics, key=relic_sort_key):
         mapping[name] = (name in available_set)
 
     out = {
         "generated_at": datetime.utcnow().strftime("%Y-%m-%d"),
-        "available": mapping,  # <-- app.js can read VAULT.available["Lith K12"] etc
+        "available": mapping
     }
 
     with open(VAULT_OUT, "w", encoding="utf-8") as f:
