@@ -60,15 +60,18 @@
     <footer class="muted small" id="footer"></footer>
   </main>
 
+  <!-- Fullscreen Relic Picker -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalTop">
       <button id="modalClose" class="modalClose" type="button">✕</button>
+
       <div class="modalTitle" id="modalTitle">Choose relic</div>
 
-      <!-- ✅ Toggle button (top-right) -->
-      <button id="modeToggle" class="modeToggle" type="button" aria-pressed="false" data-mode="relic">
-        Relics
-      </button>
+      <!-- NEW: two separate buttons -->
+      <div class="modeButtons">
+        <button id="modeRelics" class="modeBtn active" type="button">Relics</button>
+        <button id="modeItems" class="modeBtn" type="button">Items</button>
+      </div>
     </div>
 
     <div class="modalSearch">
