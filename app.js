@@ -3,7 +3,7 @@
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
-let VAULT = null; // vaultStatus.json (wiki-based)
+let VAULT = null; // loaded from data/vaultStatus.json (wiki-derived)
 
 const state = { r1: null, r2: null, r3: null, r4: null };
 const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
@@ -36,6 +36,59 @@ function rarityToLabel(r) {
   if (rounded <= 2.5) return `Rare (${rounded}%)`;
   if (rounded <= 15) return `Uncommon (${rounded}%)`;
   return `Common (${rounded}%)`;
+}
+
+// -------- Vault status helpers --------
+function relicIsAvailable(relicName) {
+  if (!VAULT || !relicName) return null;
+
+  // if file is { available: { "Lith K12": true, ... } }
+  if (VAULT.available && typeof VAULT.available === "object") {
+    const v = VAULT.available[relicName];
+    if (typeof v === "boolean") return v;
+  }
+
+  // fallback older formats
+  const v = VAULT[relicName];
+  if (typeof v === "boolean") return v;
+  if (v && typeof v === "object") {
+    if (typeof v.available === "boolean") return v.available;
+    if (typeof v.vaulted === "boolean") return !v.vaulted;
+  }
+
+  return null;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+// Turn "Lith A1, Lith A2, Neo A3" into colored spans (results list only).
+// CSS classes expected (you can add later):
+// .relicName.available { color: ... }
+// .relicName.vaulted   { color: ... }
+function formatRelicFromText(fromText) {
+  const parts = String(fromText || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return "";
+
+  return parts.map(name => {
+    const avail = relicIsAvailable(name);
+    const cls =
+      avail === true ? "relicName available" :
+      avail === false ? "relicName vaulted" :
+      "relicName";
+
+    return `<span class="${cls}">${escapeHtml(name)}</span>`;
+  }).join(", ");
 }
 
 // ---------------- Natural relic sorting ----------------
@@ -222,7 +275,7 @@ function renderItemDetailView() {
   header.className = "modalItem";
   header.innerHTML = `
     <div class="modalRowTop">
-      <strong>${ITEM_DETAIL.displayName}</strong>
+      <strong>${escapeHtml(ITEM_DETAIL.displayName)}</strong>
       <span class="modalPrice">${typeof ITEM_DETAIL.plat === "number" ? `${ITEM_DETAIL.plat} Plat` : "?"}</span>
     </div>
     <span>Select which relic to pick</span>
@@ -243,9 +296,9 @@ function renderItemDetailView() {
     row.className = "modalItem";
     row.innerHTML = `
       <div class="modalRowTop">
-        <strong>${e.relicName}</strong>
+        <strong>${escapeHtml(e.relicName)}</strong>
       </div>
-      <span>${e.rarityLabel || "Tap to select"}</span>
+      <span>${escapeHtml(e.rarityLabel || "Tap to select")}</span>
     `;
     row.addEventListener("click", () => pickRelic(e.relicName));
     listEl.appendChild(row);
@@ -312,10 +365,10 @@ function renderModalList(filter) {
       row.className = "modalItem";
       row.innerHTML = `
         <div class="modalRowTop">
-          <strong>${info.displayName}</strong>
-          <span class="modalPrice">${priceText}</span>
+          <strong>${escapeHtml(info.displayName)}</strong>
+          <span class="modalPrice">${escapeHtml(priceText)}</span>
         </div>
-        <div class="modalSub">${relicPreview}${info.relics.length > 10 ? " …" : ""}</div>
+        <div class="modalSub">${escapeHtml(relicPreview)}${info.relics.length > 10 ? " …" : ""}</div>
       `;
 
       // Click -> open drilldown list to choose relic
@@ -338,42 +391,10 @@ function renderModalList(filter) {
   for (const name of list) {
     const row = document.createElement("div");
     row.className = "modalItem";
-    row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
+    row.innerHTML = `<strong>${escapeHtml(name)}</strong><span>Tap to select</span>`;
     row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
-}
-
-// ---------------- Vault status helpers (RESULTS ONLY) ----------------
-function relicIsAvailable(relicName) {
-  if (!VAULT || !relicName) return null;
-
-  const v = VAULT[relicName];
-  if (typeof v === "boolean") return v;
-
-  if (v && typeof v === "object") {
-    if (typeof v.available === "boolean") return v.available;
-    if (typeof v.vaulted === "boolean") return !v.vaulted;
-  }
-
-  return null;
-}
-
-function renderFromWithVaultColors(fromStr) {
-  // fromStr looks like: "Lith A3, Neo A3"
-  const parts = (fromStr || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  if (parts.length === 0) return "";
-
-  return parts.map(name => {
-    const avail = relicIsAvailable(name);
-    if (avail === true) return `<span class="relicAvail">${name}</span>`;
-    if (avail === false) return `<span class="relicVault">${name}</span>`;
-    return `<span>${name}</span>`; // unknown/no data
-  }).join(", ");
 }
 
 // ---------------- Rewards render ----------------
@@ -427,13 +448,14 @@ function renderCards(list) {
     const div = document.createElement("div");
     div.className = "cardRow";
 
-    const fromHtml = renderFromWithVaultColors(e.from);
+    // Color relic names in results window only
+    const fromHtml = formatRelicFromText(e.from);
 
     div.innerHTML = `
       <div class="cardLeft">
-        <div class="itemName">${e.item}</div>
+        <div class="itemName">${escapeHtml(e.item)}</div>
         <div class="itemMeta">
-          <span class="badge">${e.rarity || ""}</span>
+          <span class="badge">${escapeHtml(e.rarity || "")}</span>
           <span>${fromHtml}</span>
         </div>
       </div>
@@ -484,10 +506,14 @@ async function boot() {
     PRICES = {};
   }
 
-  // NEW: load vault status (optional)
+  // Vault status is optional; if missing/404, we just don't color anything
   try {
     const vaultRes = await fetch("./data/vaultStatus.json", { cache: "no-store" });
-    VAULT = await vaultRes.json();
+    if (vaultRes.ok) {
+      VAULT = await vaultRes.json();
+    } else {
+      VAULT = null;
+    }
   } catch {
     VAULT = null;
   }
@@ -503,7 +529,7 @@ async function boot() {
   $("modalClose")?.addEventListener("click", closeModal);
   $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
-  // two separate mode buttons
+  // Two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
   $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
 
