@@ -3,7 +3,7 @@
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
-let VAULT_STATUS = null; // { "Lith K12": true/false } true = available
+let VAULT = null; // vaultStatus.json (wiki-based)
 
 const state = { r1: null, r2: null, r3: null, r4: null };
 const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
@@ -70,7 +70,7 @@ function relicNaturalCompare(a, b) {
   const tc = A.tail.localeCompare(B.tail, undefined, { sensitivity: "base" });
   if (tc !== 0) return tc;
 
-  return a.localeCompare(a);
+  return a.localeCompare(b);
 }
 
 // ---------------- Item -> relic index ----------------
@@ -344,6 +344,38 @@ function renderModalList(filter) {
   }
 }
 
+// ---------------- Vault status helpers (RESULTS ONLY) ----------------
+function relicIsAvailable(relicName) {
+  if (!VAULT || !relicName) return null;
+
+  const v = VAULT[relicName];
+  if (typeof v === "boolean") return v;
+
+  if (v && typeof v === "object") {
+    if (typeof v.available === "boolean") return v.available;
+    if (typeof v.vaulted === "boolean") return !v.vaulted;
+  }
+
+  return null;
+}
+
+function renderFromWithVaultColors(fromStr) {
+  // fromStr looks like: "Lith A3, Neo A3"
+  const parts = (fromStr || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return "";
+
+  return parts.map(name => {
+    const avail = relicIsAvailable(name);
+    if (avail === true) return `<span class="relicAvail">${name}</span>`;
+    if (avail === false) return `<span class="relicVault">${name}</span>`;
+    return `<span>${name}</span>`; // unknown/no data
+  }).join(", ");
+}
+
 // ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
@@ -377,7 +409,7 @@ function mergeAndSortRewards(relicsPicked) {
 
   const final = [...merged.values()].map(x => ({
     item: x.item,
-    fromList: [...x.fromSet].sort(relicNaturalCompare),
+    from: [...x.fromSet].join(", "),
     rarity: x.rarity,
     plat: x.plat
   }));
@@ -386,29 +418,17 @@ function mergeAndSortRewards(relicsPicked) {
   return final;
 }
 
-function relicClass(relicName) {
-  if (!VAULT_STATUS || typeof VAULT_STATUS[relicName] !== "boolean") return "";
-  return VAULT_STATUS[relicName] ? "relicAvail" : "relicVault";
-}
-
-function renderFromList(fromList) {
-  return fromList
-    .map(rname => {
-      const cls = relicClass(rname);
-      return cls ? `<span class="${cls}">${rname}</span>` : rname;
-    })
-    .join(", ");
-}
-
 function renderCards(list) {
   const cardsEl = $("cards");
   if (!cardsEl) return;
 
   cardsEl.innerHTML = "";
   for (const e of list) {
-    const fromHtml = renderFromList(e.fromList || []);
     const div = document.createElement("div");
     div.className = "cardRow";
+
+    const fromHtml = renderFromWithVaultColors(e.from);
+
     div.innerHTML = `
       <div class="cardLeft">
         <div class="itemName">${e.item}</div>
@@ -464,12 +484,12 @@ async function boot() {
     PRICES = {};
   }
 
-  // NEW: load vault status from wiki-generated file (optional)
+  // NEW: load vault status (optional)
   try {
     const vaultRes = await fetch("./data/vaultStatus.json", { cache: "no-store" });
-    VAULT_STATUS = await vaultRes.json();
+    VAULT = await vaultRes.json();
   } catch {
-    VAULT_STATUS = null;
+    VAULT = null;
   }
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
@@ -507,9 +527,6 @@ async function boot() {
     $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
-
-  // Ensure initial active button state
-  setSearchMode("relic");
 
   setStatus("Ready");
 }
