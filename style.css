@@ -99,11 +99,8 @@ button.ghost { background: transparent; }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* NEW: Two-button mode switch (matches your index.html .modeButtons) */
-.modeButtons{
-  display:flex;
-  gap:8px;
-}
+/* NEW: Two-button mode switch */
+.modeButtons { display:flex; gap:8px; }
 .modeBtn{
   border:1px solid var(--line);
   background:#0e1420;
@@ -118,28 +115,28 @@ button.ghost { background: transparent; }
   border-color:#2a3a5e;
 }
 
-/* NEW: Item rows with price on the right (used in Items search results) */
-.modalItemRow{
+/* NEW: Item rows with price on the right (used by your current app.js) */
+.modalRowTop{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
 }
-.modalItemPrice{
+.modalPrice{
   margin-top: 1px;
-  color: var(--text);
+  font-size: 12px;
   font-weight: 750;
+  color: var(--text);
   white-space: nowrap;
-  text-align: right;
+  text-align:right;
 }
-.modalItemPrice small{
-  display:block;
+.modalSub{
+  margin-top: 4px;
   color: var(--muted);
-  font-weight: 600;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* Back row styling inside modal list (optional) */
+/* NEW: Back row styling inside modal list */
 .modalBack{
   display:flex;
   align-items:center;
