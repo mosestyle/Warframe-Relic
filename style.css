@@ -1,6 +1,24 @@
-:root { --bg:#0b0f14; --card:#121826; --text:#e7eefc; --muted:#95a3bd; --line:#233049; }
+:root {
+  --bg:#0b0f14;
+  --card:#121826;
+  --text:#e7eefc;
+  --muted:#95a3bd;
+  --line:#233049;
+
+  /* NEW: soothing status colors that match the theme */
+  --avail:#41d27a;   /* green */
+  --vault:#f06a6a;   /* soft red */
+}
+
 * { box-sizing:border-box; }
-body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:var(--bg); color:var(--text); }
+
+body {
+  margin:0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background:var(--bg);
+  color:var(--text);
+}
+
 .wrap { max-width: 920px; margin: 0 auto; padding: 16px; }
 h1 { margin: 12px 0 6px; font-size: 22px; }
 p { margin: 0; }
@@ -28,8 +46,12 @@ p { margin: 0; }
 
 .actions { display:flex; gap:10px; align-items:center; padding: 0 16px 16px; flex-wrap:wrap; }
 button {
-  border:1px solid #2a3a5e; background:#1b2a48; color:var(--text);
-  padding: 10px 14px; border-radius: 12px; font-weight:600;
+  border:1px solid #2a3a5e;
+  background:#1b2a48;
+  color:var(--text);
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-weight:600;
 }
 button.ghost { background: transparent; }
 .status { margin-left:auto; color: var(--muted); font-size: 12px; }
@@ -38,7 +60,10 @@ button.ghost { background: transparent; }
 
 /* Cards */
 .cardRow{
-  display:flex; gap:12px; justify-content:space-between; align-items:flex-start;
+  display:flex;
+  gap:12px;
+  justify-content:space-between;
+  align-items:flex-start;
   padding: 12px 10px;
   border-bottom: 1px solid var(--line);
 }
@@ -46,8 +71,12 @@ button.ghost { background: transparent; }
 .itemName{ font-size: 16px; font-weight: 650; line-height: 1.2; }
 .itemMeta{ margin-top:6px; font-size: 12px; color: var(--muted); }
 .badge{
-  display:inline-block; padding: 3px 8px; border-radius: 999px;
-  border: 1px solid var(--line); background: #0e1420; color: var(--muted);
+  display:inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #0e1420;
+  color: var(--muted);
   margin-right: 6px;
 }
 .cardRight{
@@ -57,9 +86,16 @@ button.ghost { background: transparent; }
 .platNum{ font-size: 18px; font-weight: 750; }
 .platLbl{ font-size: 11px; color: var(--muted); }
 
-/* NEW: Vault status colors (results window only) */
-.relicAvail { color: #34d399; }  /* soothing green */
-.relicVault { color: #fb7185; }  /* soothing red */
+/* NEW: Vault coloring (matches your app.js output) */
+.relicName{
+  font-weight: 650;
+}
+.relicName.available{
+  color: var(--avail);
+}
+.relicName.vaulted{
+  color: var(--vault);
+}
 
 /* Modal */
 .modal.hidden{ display:none; }
@@ -76,14 +112,20 @@ button.ghost { background: transparent; }
 }
 .modalClose{
   width:42px; height:42px; border-radius: 12px;
-  border:1px solid var(--line); background:#0e1420; color:var(--text);
+  border:1px solid var(--line);
+  background:#0e1420;
+  color:var(--text);
 }
 .modalTitle{ font-weight: 750; font-size: 16px; flex:1; }
 
 .modalSearch{ padding: 12px 16px; border-bottom:1px solid var(--line); }
 .modalSearch input{
-  width:100%; padding: 12px 12px; border-radius: 12px;
-  border:1px solid var(--line); background:#0e1420; color:var(--text);
+  width:100%;
+  padding: 12px 12px;
+  border-radius: 12px;
+  border:1px solid var(--line);
+  background:#0e1420;
+  color:var(--text);
   outline:none;
 }
 
@@ -99,7 +141,7 @@ button.ghost { background: transparent; }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* NEW: Two-button mode switch */
+/* Two-button mode switch */
 .modeButtons { display:flex; gap:8px; }
 .modeBtn{
   border:1px solid var(--line);
@@ -115,7 +157,7 @@ button.ghost { background: transparent; }
   border-color:#2a3a5e;
 }
 
-/* NEW: Item rows with price on the right (used by your current app.js) */
+/* Item rows with price on the right */
 .modalRowTop{
   display:flex;
   align-items:flex-start;
@@ -128,7 +170,6 @@ button.ghost { background: transparent; }
   font-weight: 750;
   color: var(--text);
   white-space: nowrap;
-  text-align:right;
 }
 .modalSub{
   margin-top: 4px;
@@ -136,7 +177,7 @@ button.ghost { background: transparent; }
   font-size: 12px;
 }
 
-/* NEW: Back row styling inside modal list */
+/* Back row styling inside modal list */
 .modalBack{
   display:flex;
   align-items:center;
