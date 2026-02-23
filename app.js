@@ -10,6 +10,8 @@ const state = { r1: null, r2: null, r3: null, r4: null };
 const $ = (id) => document.getElementById(id);
 const norm = (s) => (s || "").trim();
 
+const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
+
 function setStatus(msg) {
   const el = $("status");
   if (el) el.textContent = msg || "";
@@ -98,12 +100,21 @@ function buildItemIndex() {
     }
   }
 
+  // Sort each item's relic list nicely (natural)
+  for (const info of map.values()) {
+    info.entries.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
+  }
+
   ITEM_TO_RELICS = map;
 }
 
 // ---------------- Modal picker + toggle mode ----------------
 let modalTarget = null;
 let SEARCH_MODE = "relic"; // default
+
+// NEW: Items mode "drilldown" (choose item -> choose relic)
+let ITEMS_VIEW = "items_list"; // "items_list" | "relic_pick"
+let CURRENT_ITEM_INFO = null;
 
 function setSearchMode(mode) {
   SEARCH_MODE = (mode === "items") ? "items" : "relic";
@@ -115,6 +126,10 @@ function setSearchMode(mode) {
     btn.setAttribute("aria-pressed", SEARCH_MODE === "items" ? "true" : "false");
   }
 
+  // Reset items drilldown whenever mode changes
+  ITEMS_VIEW = "items_list";
+  CURRENT_ITEM_INFO = null;
+
   const search = $("modalSearch");
   if (search) {
     search.placeholder =
@@ -122,6 +137,9 @@ function setSearchMode(mode) {
         ? "Search item: e.g. Wisp Prime Chassis Blueprint"
         : "Search: e.g. Meso C1 / Neo N16 / Axi S18";
   }
+
+  const title = $("modalTitle");
+  if (title) title.textContent = "Choose relic";
 
   renderModalList($("modalSearch")?.value || "");
 }
@@ -150,6 +168,24 @@ function closeModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modalTarget = null;
+
+  // Reset drilldown when closing
+  ITEMS_VIEW = "items_list";
+  CURRENT_ITEM_INFO = null;
+}
+
+function pickRelicIntoTarget(relicName) {
+  if (!modalTarget) return;
+
+  state[modalTarget] = relicName;
+
+  const tEl = $(`${modalTarget}Text`);
+  if (tEl) {
+    tEl.textContent = relicName;
+    tEl.classList.remove("pickerPlaceholder");
+  }
+
+  closeModal();
 }
 
 function renderModalList(filter) {
@@ -161,6 +197,58 @@ function renderModalList(filter) {
 
   // ---------- ITEMS MODE ----------
   if (SEARCH_MODE === "items") {
+    if (!ITEM_TO_RELICS) buildItemIndex();
+
+    // VIEW 2: choose relic for the selected item
+    if (ITEMS_VIEW === "relic_pick" && CURRENT_ITEM_INFO) {
+      const title = $("modalTitle");
+      if (title) title.textContent = "Choose relic";
+
+      // Back row
+      const back = document.createElement("div");
+      back.className = "modalItem";
+      back.innerHTML = `<strong>← Back</strong><span>Back to item results</span>`;
+      back.addEventListener("click", () => {
+        ITEMS_VIEW = "items_list";
+        CURRENT_ITEM_INFO = null;
+        const t = $("modalTitle");
+        if (t) t.textContent = "Choose relic";
+        renderModalList($("modalSearch")?.value || "");
+      });
+      listEl.appendChild(back);
+
+      // Item header row (non-click)
+      const hdr = document.createElement("div");
+      hdr.className = "modalItem";
+      hdr.innerHTML = `<strong>${CURRENT_ITEM_INFO.displayName}</strong><span>Select which relic to pick</span>`;
+      listEl.appendChild(hdr);
+
+      // Filter relic options by q if user typed something
+      const entries = CURRENT_ITEM_INFO.entries || [];
+      const shown = q
+        ? entries.filter(e => (e.relicName || "").toLowerCase().includes(q))
+        : entries;
+
+      if (shown.length === 0) {
+        const none = document.createElement("div");
+        none.className = "modalItem";
+        none.innerHTML = `<strong>No relic match</strong><span>Try clearing the search</span>`;
+        listEl.appendChild(none);
+        return;
+      }
+
+      for (const e of shown.slice(0, 800)) {
+        const row = document.createElement("div");
+        row.className = "modalItem";
+        row.innerHTML = `<strong>${e.relicName}</strong><span>${e.rarityLabel || "Tap to select"}</span>`;
+        row.addEventListener("click", () => pickRelicIntoTarget(e.relicName));
+        listEl.appendChild(row);
+      }
+
+      return;
+    }
+
+    // VIEW 1: item list search
     if (!q) {
       const row = document.createElement("div");
       row.className = "modalItem";
@@ -169,8 +257,7 @@ function renderModalList(filter) {
       return;
     }
 
-    if (!ITEM_TO_RELICS) buildItemIndex();
-
+    // Find matching items (limit for performance)
     const matches = [];
     for (const [key, info] of ITEM_TO_RELICS.entries()) {
       if (key.includes(q)) matches.push(info);
@@ -185,33 +272,22 @@ function renderModalList(filter) {
       return;
     }
 
-    // Show top results; each row includes which relics contain it
-    for (const info of matches.slice(0, 12)) {
-      const relicList = info.entries
-        .slice(0, 6)
-        .map(e => `${e.relicName}${e.rarityLabel ? ` • ${e.rarityLabel}` : ""}`)
-        .join(" | ");
+    // Show results; clicking an item opens the second list (relic pick)
+    for (const info of matches.slice(0, 20)) {
+      const preview = info.entries
+        .slice(0, 5)
+        .map(e => e.relicName)
+        .join(" • ");
 
       const row = document.createElement("div");
       row.className = "modalItem";
-      row.innerHTML = `<strong>${info.displayName}</strong><span>${relicList}</span>`;
+      row.innerHTML = `<strong>${info.displayName}</strong><span>${preview}${info.entries.length > 5 ? " …" : ""}</span>`;
 
-      // Click selects the first relic containing that item (fast UX)
       row.addEventListener("click", () => {
-        if (!modalTarget) return;
-
-        const firstRelic = info.entries[0]?.relicName;
-        if (!firstRelic) return;
-
-        state[modalTarget] = firstRelic;
-
-        const tEl = $(`${modalTarget}Text`);
-        if (tEl) {
-          tEl.textContent = firstRelic;
-          tEl.classList.remove("pickerPlaceholder");
-        }
-
-        closeModal();
+        CURRENT_ITEM_INFO = info;
+        ITEMS_VIEW = "relic_pick";
+        // Keep whatever user has typed; it will now filter relic names in the second list
+        renderModalList($("modalSearch")?.value || "");
       });
 
       listEl.appendChild(row);
@@ -220,7 +296,7 @@ function renderModalList(filter) {
     return;
   }
 
-  // ---------- RELICS MODE (UNCHANGED BEHAVIOR) ----------
+  // ---------- RELICS MODE (unchanged) ----------
   const list = q
     ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 800)
     : RELIC_NAMES.slice(0, 800);
@@ -229,19 +305,7 @@ function renderModalList(filter) {
     const row = document.createElement("div");
     row.className = "modalItem";
     row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
-    row.addEventListener("click", () => {
-      if (!modalTarget) return;
-
-      state[modalTarget] = name;
-
-      const tEl = $(`${modalTarget}Text`);
-      if (tEl) {
-        tEl.textContent = name;
-        tEl.classList.remove("pickerPlaceholder");
-      }
-
-      closeModal();
-    });
+    row.addEventListener("click", () => pickRelicIntoTarget(name));
     listEl.appendChild(row);
   }
 }
@@ -359,9 +423,13 @@ async function boot() {
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
-  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
-  // NEW: toggle Relics/Items
+  $("modalSearch")?.addEventListener("input", (e) => {
+    // In Items mode, typing while in relic_pick view filters relic names (nice)
+    renderModalList(e.target.value);
+  });
+
+  // Toggle Relics/Items
   $("modeToggle")?.addEventListener("click", () => {
     setSearchMode(SEARCH_MODE === "relic" ? "items" : "relic");
   });
@@ -371,13 +439,14 @@ async function boot() {
   });
 
   $("btnShow")?.addEventListener("click", showRewards);
+
   $("btnClear")?.addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
 
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
       const el = $(id);
       if (el) {
-        el.textContent = "Tap to choose (Lith/Meso/Neo/Axi)";
+        el.textContent = PICKER_DEFAULT;
         el.classList.add("pickerPlaceholder");
       }
     });
