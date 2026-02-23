@@ -1,16 +1,13 @@
 // app.js — Modal picker UI + prices from data/prices.json ONLY.
-// No caching, no client-side price fetching.
 
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
 
 const state = { r1: null, r2: null, r3: null, r4: null };
+const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
-const norm = (s) => (s || "").trim();
-
-const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 function setStatus(msg) {
   const el = $("status");
@@ -75,11 +72,11 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Item -> relic index (for Items search mode) ----------------
+// ---------------- Item -> relic index ----------------
 let ITEM_TO_RELICS = null;
 
+// { keyLower: { displayName, plat, relics: [{ relicName, rarityLabel }] } }
 function buildItemIndex() {
-  // Map: lowercase item name -> { displayName, entries: [{ relicName, rarityLabel }] }
   const map = new Map();
 
   for (const r of RELICS) {
@@ -94,55 +91,65 @@ function buildItemIndex() {
       const key = item.toLowerCase();
 
       if (!map.has(key)) {
-        map.set(key, { displayName: item, entries: [] });
+        map.set(key, { displayName: item, relics: [] });
       }
-      map.get(key).entries.push({ relicName: rname, rarityLabel });
+
+      map.get(key).relics.push({ relicName: rname, rarityLabel });
     }
   }
 
-  // Sort each item's relic list nicely (natural)
+  // de-dupe and sort relic lists
   for (const info of map.values()) {
-    info.entries.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
+    const seen = new Set();
+    const out = [];
+    for (const e of info.relics) {
+      const k = `${e.relicName}__${e.rarityLabel}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(e);
+    }
+    out.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
+    info.relics = out;
+
+    // attach plat once at build time
+    info.plat = platForItem(info.displayName);
   }
 
   ITEM_TO_RELICS = map;
 }
 
-// ---------------- Modal picker + toggle mode ----------------
+// ---------------- Modal picker + 2 buttons ----------------
 let modalTarget = null;
-let SEARCH_MODE = "relic"; // default
+let SEARCH_MODE = "relic";  // "relic" or "items"
+let ITEM_DETAIL = null;     // {displayName, plat, relics:[...]} when drilling into an item
 
-// Items mode drilldown (choose item -> choose relic)
-let ITEMS_VIEW = "items_list"; // "items_list" | "relic_pick"
-let CURRENT_ITEM_INFO = null;
+function setButtonsActive() {
+  const bR = $("modeRelics");
+  const bI = $("modeItems");
+  if (!bR || !bI) return;
 
-// NEW: remember the item search text so we can restore it on Back
-let ITEM_SEARCH_TEXT = "";
+  if (SEARCH_MODE === "items") {
+    bR.classList.remove("active");
+    bI.classList.add("active");
+  } else {
+    bI.classList.remove("active");
+    bR.classList.add("active");
+  }
+}
 
 function setSearchMode(mode) {
   SEARCH_MODE = (mode === "items") ? "items" : "relic";
+  ITEM_DETAIL = null;
 
-  const btn = $("modeToggle");
-  if (btn) {
-    btn.textContent = (SEARCH_MODE === "items") ? "Items" : "Relics";
-    btn.dataset.mode = SEARCH_MODE;
-    btn.setAttribute("aria-pressed", SEARCH_MODE === "items" ? "true" : "false");
-  }
-
-  // Reset items drilldown whenever mode changes
-  ITEMS_VIEW = "items_list";
-  CURRENT_ITEM_INFO = null;
+  setButtonsActive();
 
   const search = $("modalSearch");
   if (search) {
     search.placeholder =
       (SEARCH_MODE === "items")
-        ? "Search item: e.g. Wisp Prime Neuroptics Blueprint"
+        ? "Search item: e.g. Wisp Prime Chassis Blueprint"
         : "Search: e.g. Meso C1 / Neo N16 / Axi S18";
   }
-
-  const title = $("modalTitle");
-  if (title) title.textContent = "Choose relic";
 
   renderModalList($("modalSearch")?.value || "");
 }
@@ -159,7 +166,7 @@ function openModal(targetKey) {
   const search = $("modalSearch");
   if (search) search.value = "";
 
-  // Always open default mode = Relics
+  // Always default to Relics (as requested)
   setSearchMode("relic");
 
   modal.classList.remove("hidden");
@@ -171,14 +178,10 @@ function closeModal() {
   if (!modal) return;
   modal.classList.add("hidden");
   modalTarget = null;
-
-  // Reset drilldown when closing
-  ITEMS_VIEW = "items_list";
-  CURRENT_ITEM_INFO = null;
-  ITEM_SEARCH_TEXT = "";
+  ITEM_DETAIL = null;
 }
 
-function pickRelicIntoTarget(relicName) {
+function pickRelic(relicName) {
   if (!modalTarget) return;
 
   state[modalTarget] = relicName;
@@ -192,100 +195,92 @@ function pickRelicIntoTarget(relicName) {
   closeModal();
 }
 
+function renderItemDetailView() {
+  const listEl = $("modalList");
+  if (!listEl || !ITEM_DETAIL) return;
+
+  listEl.innerHTML = "";
+
+  // Back row
+  const back = document.createElement("div");
+  back.className = "modalItem";
+  back.innerHTML = `
+    <div class="modalBack">
+      <strong>← Back</strong>
+    </div>
+    <span>Back to item results</span>
+  `;
+  back.addEventListener("click", () => {
+    ITEM_DETAIL = null;
+    renderModalList($("modalSearch")?.value || "");
+  });
+  listEl.appendChild(back);
+
+  // Header row (item + price)
+  const header = document.createElement("div");
+  header.className = "modalItem";
+  header.innerHTML = `
+    <div class="modalRowTop">
+      <strong>${ITEM_DETAIL.displayName}</strong>
+      <span class="modalPrice">${typeof ITEM_DETAIL.plat === "number" ? `${ITEM_DETAIL.plat} Plat` : "?"}</span>
+    </div>
+    <span>Select which relic to pick</span>
+  `;
+  listEl.appendChild(header);
+
+  // Relic list
+  if (!ITEM_DETAIL.relics || ITEM_DETAIL.relics.length === 0) {
+    const row = document.createElement("div");
+    row.className = "modalItem";
+    row.innerHTML = `<strong>No relic match</strong><span>Try clearing the search</span>`;
+    listEl.appendChild(row);
+    return;
+  }
+
+  for (const e of ITEM_DETAIL.relics.slice(0, 250)) {
+    const row = document.createElement("div");
+    row.className = "modalItem";
+    row.innerHTML = `
+      <div class="modalRowTop">
+        <strong>${e.relicName}</strong>
+      </div>
+      <span>${e.rarityLabel || "Tap to select"}</span>
+    `;
+    row.addEventListener("click", () => pickRelic(e.relicName));
+    listEl.appendChild(row);
+  }
+}
+
 function renderModalList(filter) {
   const listEl = $("modalList");
   if (!listEl) return;
+
+  // If we are in item drilldown view
+  if (SEARCH_MODE === "items" && ITEM_DETAIL) {
+    renderItemDetailView();
+    return;
+  }
 
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
   // ---------- ITEMS MODE ----------
   if (SEARCH_MODE === "items") {
-    if (!ITEM_TO_RELICS) buildItemIndex();
-
-    // VIEW 2: choose relic for selected item
-    if (ITEMS_VIEW === "relic_pick" && CURRENT_ITEM_INFO) {
-      const title = $("modalTitle");
-      if (title) title.textContent = "Choose relic";
-
-      // Back row (restores item search text)
-      const back = document.createElement("div");
-      back.className = "modalItem";
-      back.innerHTML = `<strong>← Back</strong><span>Back to item results</span>`;
-      back.addEventListener("click", () => {
-        ITEMS_VIEW = "items_list";
-        CURRENT_ITEM_INFO = null;
-
-        const search = $("modalSearch");
-        if (search) {
-          search.value = ITEM_SEARCH_TEXT;
-          search.placeholder = "Search item: e.g. Wisp Prime Neuroptics Blueprint";
-        }
-
-        const t = $("modalTitle");
-        if (t) t.textContent = "Choose relic";
-
-        renderModalList(search?.value || "");
-      });
-      listEl.appendChild(back);
-
-      // Item header row (with price on right)
-      const itemPlat = platForItem(CURRENT_ITEM_INFO.displayName);
-      const hdr = document.createElement("div");
-      hdr.className = "modalItem";
-      hdr.innerHTML = `
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-          <div style="min-width:0">
-            <strong>${CURRENT_ITEM_INFO.displayName}</strong>
-            <span style="display:block;margin-top:3px">Select which relic to pick</span>
-          </div>
-          <div style="white-space:nowrap;text-align:right">
-            <strong>${itemPlat ?? "?"}</strong>
-            <span style="display:block;margin-top:3px">Plat</span>
-          </div>
-        </div>
-      `;
-      listEl.appendChild(hdr);
-
-      // Filter relic options by q (now q is a relic filter, not the item name)
-      const entries = CURRENT_ITEM_INFO.entries || [];
-      const shown = q
-        ? entries.filter(e => (e.relicName || "").toLowerCase().includes(q))
-        : entries;
-
-      if (shown.length === 0) {
-        const none = document.createElement("div");
-        none.className = "modalItem";
-        none.innerHTML = `<strong>No relic match</strong><span>Try clearing the search</span>`;
-        listEl.appendChild(none);
-        return;
-      }
-
-      for (const e of shown.slice(0, 800)) {
-        const row = document.createElement("div");
-        row.className = "modalItem";
-        row.innerHTML = `<strong>${e.relicName}</strong><span>${e.rarityLabel || "Tap to select"}</span>`;
-        row.addEventListener("click", () => pickRelicIntoTarget(e.relicName));
-        listEl.appendChild(row);
-      }
-
-      return;
-    }
-
-    // VIEW 1: item list search
     if (!q) {
       const row = document.createElement("div");
       row.className = "modalItem";
-      row.innerHTML = `<strong>Type an item name</strong><span>Example: Wisp Prime Neuroptics Blueprint</span>`;
+      row.innerHTML = `<strong>Type an item name</strong><span>Example: Wisp Prime Chassis Blueprint</span>`;
       listEl.appendChild(row);
       return;
     }
 
-    // Find matching items (limit for performance)
+    if (!ITEM_TO_RELICS) buildItemIndex();
+
+    // Collect matches (keep fast)
     const matches = [];
     for (const [key, info] of ITEM_TO_RELICS.entries()) {
       if (key.includes(q)) matches.push(info);
-      if (matches.length >= 50) break;
+      if (matches.length >= 60) break;
     }
 
     if (matches.length === 0) {
@@ -296,45 +291,36 @@ function renderModalList(filter) {
       return;
     }
 
-    // Show item results; show plat on the right; tapping item opens relic-pick list
+    // Sort matches by plat desc (unknown last), then name
+    matches.sort((a, b) => {
+      const ap = (typeof a.plat === "number") ? a.plat : -1;
+      const bp = (typeof b.plat === "number") ? b.plat : -1;
+      if (bp !== ap) return bp - ap;
+      return a.displayName.localeCompare(b.displayName);
+    });
+
     for (const info of matches.slice(0, 20)) {
-      const itemPlat = platForItem(info.displayName);
-      const preview = info.entries
-        .slice(0, 5)
+      const relicPreview = info.relics
+        .slice(0, 10)
         .map(e => e.relicName)
         .join(" • ");
+
+      const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
       row.className = "modalItem";
       row.innerHTML = `
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-          <div style="min-width:0">
-            <strong>${info.displayName}</strong>
-            <span style="display:block;margin-top:3px">${preview}${info.entries.length > 5 ? " …" : ""}</span>
-          </div>
-          <div style="white-space:nowrap;text-align:right">
-            <strong>${itemPlat ?? "?"}</strong>
-            <span style="display:block;margin-top:3px">Plat</span>
-          </div>
+        <div class="modalRowTop">
+          <strong>${info.displayName}</strong>
+          <span class="modalPrice">${priceText}</span>
         </div>
+        <div class="modalSub">${relicPreview}${info.relics.length > 10 ? " …" : ""}</div>
       `;
 
+      // Click -> open drilldown list to choose relic
       row.addEventListener("click", () => {
-        // Save item search text so Back restores it
-        const search = $("modalSearch");
-        ITEM_SEARCH_TEXT = search?.value || "";
-
-        CURRENT_ITEM_INFO = info;
-        ITEMS_VIEW = "relic_pick";
-
-        // CRITICAL FIX:
-        // Clear the search text so it does NOT filter relic names by the item name.
-        if (search) {
-          search.value = "";
-          search.placeholder = "Filter relics (optional): e.g. Lith A7 / Meso K6";
-        }
-
-        renderModalList("");
+        ITEM_DETAIL = info;
+        renderItemDetailView();
       });
 
       listEl.appendChild(row);
@@ -352,7 +338,7 @@ function renderModalList(filter) {
     const row = document.createElement("div");
     row.className = "modalItem";
     row.innerHTML = `<strong>${name}</strong><span>Tap to select</span>`;
-    row.addEventListener("click", () => pickRelicIntoTarget(name));
+    row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
 }
@@ -376,6 +362,7 @@ function mergeAndSortRewards(relicsPicked) {
     }
   }
 
+  // merge duplicates
   const merged = new Map();
   for (const e of all) {
     const prev = merged.get(e.item);
@@ -463,25 +450,18 @@ async function boot() {
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
+  // Build item index once
   buildItemIndex();
 
   const footer = $("footer");
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
+  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
-  $("modalSearch")?.addEventListener("input", (e) => {
-    renderModalList(e.target.value);
-  });
-
-  $("modeToggle")?.addEventListener("click", () => {
-    setSearchMode(SEARCH_MODE === "relic" ? "items" : "relic");
-    const search = $("modalSearch");
-    if (search) {
-      // when toggling, keep text; render handles it
-      renderModalList(search.value);
-    }
-  });
+  // NEW: two separate mode buttons
+  $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
+  $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
