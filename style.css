@@ -57,6 +57,10 @@ button.ghost { background: transparent; }
 .platNum{ font-size: 18px; font-weight: 750; }
 .platLbl{ font-size: 11px; color: var(--muted); }
 
+/* NEW: Vault status colors (results window only) */
+.relicAvail { color: #34d399; }  /* soothing green */
+.relicVault { color: #fb7185; }  /* soothing red */
+
 /* Modal */
 .modal.hidden{ display:none; }
 .modal{
@@ -95,8 +99,11 @@ button.ghost { background: transparent; }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* NEW: Two-button mode switch */
-.modeButtons { display:flex; gap:8px; }
+/* NEW: Two-button mode switch (matches your index.html .modeButtons) */
+.modeButtons{
+  display:flex;
+  gap:8px;
+}
 .modeBtn{
   border:1px solid var(--line);
   background:#0e1420;
@@ -111,27 +118,28 @@ button.ghost { background: transparent; }
   border-color:#2a3a5e;
 }
 
-/* NEW: Item rows with price on the right */
-.modalRowTop{
+/* NEW: Item rows with price on the right (used in Items search results) */
+.modalItemRow{
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
   gap:12px;
 }
-.modalPrice{
+.modalItemPrice{
   margin-top: 1px;
-  font-size: 12px;
-  font-weight: 750;
   color: var(--text);
+  font-weight: 750;
   white-space: nowrap;
+  text-align: right;
 }
-.modalSub{
-  margin-top: 4px;
+.modalItemPrice small{
+  display:block;
   color: var(--muted);
-  font-size: 12px;
+  font-weight: 600;
+  font-size: 11px;
 }
 
-/* NEW: Back row styling inside modal list */
+/* Back row styling inside modal list (optional) */
 .modalBack{
   display:flex;
   align-items:center;
