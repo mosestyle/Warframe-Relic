@@ -2,13 +2,7 @@ name: Update Relic + Price Data (Weekly)
 
 on:
   schedule:
-    # GitHub cron is UTC.
-    # Sweden time 21:00 is:
-    # - 20:00 UTC during CET (winter)
-    # - 19:00 UTC during CEST (summer)
-    #
-    # This schedule uses 20:00 UTC every Sunday.
-    # In summer it will run at 22:00 Sweden time.
+    # 20:00 UTC Sundays (≈ 21:00 Sweden in winter, 22:00 in summer)
     - cron: "0 20 * * 0"
   workflow_dispatch:
 
@@ -34,17 +28,15 @@ jobs:
           python scripts/update_data.py
           echo "=== data folder contents ==="
           ls -la data || true
-          echo "=== scripts folder contents ==="
-          ls -la scripts || true
 
-      - name: Commit & push if changed
+      - name: Commit & push if changed (force add data/)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add data/*.json data/*.min.json data/*.txt data/*.md 2>/dev/null || true
-          git add data/* 2>/dev/null || true
-          git add scripts/missing_prices.txt 2>/dev/null || true
+          # data/ is often in .gitignore; force-add generated files
+          git add -f data/ || true
+          git add -f scripts/missing_prices.txt || true
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
