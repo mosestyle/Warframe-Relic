@@ -5,7 +5,7 @@
   --muted:#95a3bd;
   --line:#233049;
 
-  /* NEW: soothing status colors that match the theme */
+  /* soothing status colors */
   --avail:#41d27a;   /* green */
   --vault:#f06a6a;   /* soft red */
 }
@@ -86,7 +86,7 @@ button.ghost { background: transparent; }
 .platNum{ font-size: 18px; font-weight: 750; }
 .platLbl{ font-size: 11px; color: var(--muted); }
 
-/* NEW: Vault coloring (matches your app.js output) */
+/* Vault coloring (used in results + item drilldown) */
 .relicName{
   font-weight: 650;
 }
@@ -95,6 +95,22 @@ button.ghost { background: transparent; }
 }
 .relicName.vaulted{
   color: var(--vault);
+}
+
+/* ✅ Option B: 10px dot shown in Relics list */
+.relicDot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.25) inset;
+}
+.relicDot.available{ background: var(--avail); }
+.relicDot.vaulted{ background: var(--vault); }
+.relicDot.unknown{
+  background: var(--line);
+  opacity: 0.75;
 }
 
 /* Modal */
