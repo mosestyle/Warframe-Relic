@@ -1,67 +1,39 @@
 name: Update Relics + Prices (On Vault Change)
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: ["Update Vault Status (Wiki)"]
-    types: [completed]
+  push:
+    branches:
+      - main
+    paths:
+      - "data/vaultStatus.json"
 
 permissions:
   contents: write
 
-concurrency:
-  group: "relic-price-update"
-  cancel-in-progress: true
-
 jobs:
   update-data:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Decide if we should run (did vaultStatus.json change?)
-        if: ${{ github.event_name == 'workflow_run' }}
-        run: |
-          set -e
-          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-          echo "Vault workflow head_sha: $HEAD_SHA"
-          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          git checkout main
-
-          # If vault workflow didn't commit anything, HEAD == head_sha and diff is empty.
-          if git diff --name-only "$HEAD_SHA..HEAD" | grep -q "^data/vaultStatus\.json$"; then
-            echo "vaultStatus.json changed -> proceeding."
-          else
-            echo "vaultStatus.json did NOT change -> skipping heavy update."
-            exit 0
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Generate data (Relics + Prices)
+      - name: Install dependencies
         run: |
-          python scripts/update_data.py
-          ls -la data || true
+          pip install requests
 
-      - name: Commit & push if changed (force add data/)
+      - name: Run update_data.py
+        run: python scripts/update_data.py
+
+      - name: Commit data changes (if any)
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add -f data/ || true
-          git add -f scripts/missing_prices.txt || true
-
-          if git diff --cached --quiet; then
-            echo "No data changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Update relic + price data"
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "Auto-update relic + price data (vault change)"
           git push
