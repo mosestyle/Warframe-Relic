@@ -5,6 +5,7 @@ on:
     workflows: ["Update Relics + Prices (On Vault Change)"]
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: write
