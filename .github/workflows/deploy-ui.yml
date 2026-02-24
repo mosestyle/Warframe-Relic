@@ -1,50 +1,26 @@
 name: Deploy UI to GitHub Pages
 
 on:
-  push:
-    branches: ["main"]
-  workflow_dispatch:
   workflow_run:
     workflows: ["Vault Safety Re-Check (After Data Update)"]
-    types: [completed]
+    types:
+      - completed
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
-
 jobs:
   deploy:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Skip deploy if triggered by workflow_run but no new commits
-        if: ${{ github.event_name == 'workflow_run' }}
-        run: |
-          set -e
-          # If safety workflow didn't commit anything, main won't have new data-related commits.
-          # We'll deploy only if recent commits touched data/.
-          if git log -n 3 --name-only --pretty="" | grep -q "^data/"; then
-            echo "Recent data/ changes found -> deploying."
-          else
-            echo "No recent data/ changes -> skipping deploy."
-            exit 0
-          fi
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
+      - uses: actions/checkout@v4
 
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
