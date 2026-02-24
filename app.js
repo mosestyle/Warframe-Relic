@@ -148,12 +148,14 @@ function setRelicFilterMode(mode) {
   const hint = $("vaultHint");
   if (hint) {
     const counts = countVaultStates();
+
     if (RELIC_FILTER_MODE === "available") {
       hint.textContent = `Showing unvaulted only (${counts.available})`;
     } else if (RELIC_FILTER_MODE === "vaulted") {
       hint.textContent = `Showing vaulted only (${counts.vaulted})`;
     } else {
-      hint.textContent = "";
+      // ✅ NEW: show counts in ALL mode (exclude unknown)
+      hint.textContent = `Available: ${counts.available} • Vaulted: ${counts.vaulted}`;
     }
   }
 
@@ -244,7 +246,7 @@ function setSearchMode(mode) {
 
   setButtonsActive();
 
-  // ✅ NEW: hide filter row in Items mode
+  // ✅ hide filter row in Items mode
   setVaultFilterRowVisible(SEARCH_MODE === "relic");
 
   // Optional: reset relic filter when entering Items mode
