@@ -86,11 +86,13 @@ function escapeHtml(s) {
 function relicIsAvailable(relicName) {
   if (!VAULT || !relicName) return null;
 
+  // if file is { available: { "Lith K12": true, ... } }
   if (VAULT.available && typeof VAULT.available === "object") {
     const v = VAULT.available[relicName];
     if (typeof v === "boolean") return v;
   }
 
+  // fallback older formats
   const v = VAULT[relicName];
   if (typeof v === "boolean") return v;
   if (v && typeof v === "object") {
@@ -124,6 +126,18 @@ function formatRelicNameSpan(relicName) {
 // ---------------- Relic filter in MODAL (Relics list only) ----------------
 let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
 
+function countVaultStates() {
+  // Counts based on your RELIC_NAMES list (only relics we actually show)
+  let available = 0, vaulted = 0, unknown = 0;
+  for (const name of RELIC_NAMES) {
+    const v = relicIsAvailable(name);
+    if (v === true) available++;
+    else if (v === false) vaulted++;
+    else unknown++;
+  }
+  return { available, vaulted, unknown, total: RELIC_NAMES.length };
+}
+
 function setRelicFilterMode(mode) {
   RELIC_FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
 
@@ -131,15 +145,18 @@ function setRelicFilterMode(mode) {
   $("rfAvail")?.classList.toggle("active", RELIC_FILTER_MODE === "available");
   $("rfVault")?.classList.toggle("active", RELIC_FILTER_MODE === "vaulted");
 
-  // hint text
   const hint = $("vaultHint");
   if (hint) {
-    if (RELIC_FILTER_MODE === "available") hint.textContent = "Showing unvaulted only";
-    else if (RELIC_FILTER_MODE === "vaulted") hint.textContent = "Showing vaulted only";
-    else hint.textContent = "";
+    const counts = countVaultStates();
+    if (RELIC_FILTER_MODE === "available") {
+      hint.textContent = `Showing unvaulted only (${counts.available})`;
+    } else if (RELIC_FILTER_MODE === "vaulted") {
+      hint.textContent = `Showing vaulted only (${counts.vaulted})`;
+    } else {
+      hint.textContent = "";
+    }
   }
 
-  // re-render list using current search query
   renderModalList($("modalSearch")?.value || "");
 }
 
@@ -150,6 +167,13 @@ function relicPassesFilter(relicName) {
   if (avail === null) return false; // hide unknown in filtered views
 
   return (RELIC_FILTER_MODE === "available") ? (avail === true) : (avail === false);
+}
+
+// Hide/show the filter row depending on mode
+function setVaultFilterRowVisible(visible) {
+  const row = document.querySelector(".modalFilterRow");
+  if (!row) return;
+  row.style.display = visible ? "" : "none";
 }
 
 // ---------------- Item -> relic index ----------------
@@ -220,8 +244,10 @@ function setSearchMode(mode) {
 
   setButtonsActive();
 
-  // When switching to Items, keep filter row visible but it only affects Relics list.
-  // Optional: reset relic filter to all to avoid confusion
+  // ✅ NEW: hide filter row in Items mode
+  setVaultFilterRowVisible(SEARCH_MODE === "relic");
+
+  // Optional: reset relic filter when entering Items mode
   if (SEARCH_MODE === "items") setRelicFilterMode("all");
 
   const search = $("modalSearch");
@@ -541,7 +567,6 @@ async function boot() {
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
   $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
 
-  // NEW: relic filter buttons (inside modal)
   $("rfAll")?.addEventListener("click", () => setRelicFilterMode("all"));
   $("rfAvail")?.addEventListener("click", () => setRelicFilterMode("available"));
   $("rfVault")?.addEventListener("click", () => setRelicFilterMode("vaulted"));
@@ -566,6 +591,9 @@ async function boot() {
     $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
+
+  // ensure correct visibility on first load
+  setVaultFilterRowVisible(true);
 
   setStatus("Ready");
 }
