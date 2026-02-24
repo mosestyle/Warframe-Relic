@@ -123,6 +123,18 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
+// ✅ NEW: format "Lith A3, Lith D7" into colored spans
+function formatFromRelicsHtml(fromStr) {
+  const s = String(fromStr ?? "").trim();
+  if (!s) return "";
+
+  // split on commas (your data uses ", " when multiple relics exist)
+  const parts = s.split(",").map(x => x.trim()).filter(Boolean);
+  if (parts.length === 0) return escapeHtml(s);
+
+  return parts.map(p => formatRelicNameSpan(p)).join(", ");
+}
+
 // ---------------- Relic filter in MODAL (Relics list only) ----------------
 let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
 
@@ -154,7 +166,7 @@ function setRelicFilterMode(mode) {
     } else if (RELIC_FILTER_MODE === "vaulted") {
       hint.textContent = `Showing vaulted only (${counts.vaulted})`;
     } else {
-      // ✅ NEW: show counts in ALL mode (exclude unknown)
+      // show counts in ALL mode (exclude unknown)
       hint.textContent = `Available: ${counts.available} • Vaulted: ${counts.vaulted}`;
     }
   }
@@ -246,10 +258,10 @@ function setSearchMode(mode) {
 
   setButtonsActive();
 
-  // ✅ hide filter row in Items mode
+  // hide filter row in Items mode
   setVaultFilterRowVisible(SEARCH_MODE === "relic");
 
-  // Optional: reset relic filter when entering Items mode
+  // reset relic filter when entering Items mode
   if (SEARCH_MODE === "items") setRelicFilterMode("all");
 
   const search = $("modalSearch");
@@ -494,7 +506,7 @@ function renderCards(list) {
         <div class="itemName">${escapeHtml(e.item)}</div>
         <div class="itemMeta">
           <span class="badge">${escapeHtml(e.rarity || "")}</span>
-          <span>${escapeHtml(e.from)}</span>
+          <span>${formatFromRelicsHtml(e.from)}</span>
         </div>
       </div>
       <div class="cardRight">
