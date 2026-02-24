@@ -123,7 +123,7 @@ function formatRelicFromText(fromStr) {
   }).join(", ");
 }
 
-// ✅ NEW: single relic name formatter (used in item drilldown list)
+// ✅ single relic name formatter (used in item drilldown list)
 function formatRelicNameHtml(relicName) {
   const clean = (relicName || "").trim();
   if (!clean) return "";
@@ -135,6 +135,20 @@ function formatRelicNameHtml(relicName) {
     "relicName";
 
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
+}
+
+// ✅ Option B: 10px dot (used in Relics list)
+function relicDotHtml(relicName) {
+  const clean = (relicName || "").trim();
+  if (!clean) return "";
+
+  const avail = relicIsAvailable(clean);
+  const cls =
+    avail === true ? "relicDot available" :
+    avail === false ? "relicDot vaulted" :
+    "relicDot unknown";
+
+  return `<span class="${cls}" aria-hidden="true"></span>`;
 }
 
 // ---------------- Item -> relic index ----------------
@@ -400,9 +414,20 @@ function renderModalList(filter) {
     : RELIC_NAMES.slice(0, 800);
 
   for (const name of list) {
+    const dot = relicDotHtml(name);
+
     const row = document.createElement("div");
     row.className = "modalItem";
-    row.innerHTML = `<strong>${escapeHtml(name)}</strong><span>Tap to select</span>`;
+
+    // Option B: name left + 10px dot right
+    row.innerHTML = `
+      <div class="modalRowTop">
+        <strong>${escapeHtml(name)}</strong>
+        ${dot}
+      </div>
+      <span>Tap to select</span>
+    `;
+
     row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
@@ -530,16 +555,17 @@ async function boot() {
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
+
   $("modalSearch")?.addEventListener("input", (e) => {
-  const val = e.target.value;
+    const val = e.target.value;
 
-  // If user starts typing while in item drilldown view, auto-exit to item results.
-  if (SEARCH_MODE === "items" && ITEM_DETAIL) {
-    ITEM_DETAIL = null;
-  }
+    // If user starts typing while in item drilldown view, auto-exit to item results.
+    if (SEARCH_MODE === "items" && ITEM_DETAIL) {
+      ITEM_DETAIL = null;
+    }
 
-  renderModalList(val);
-});
+    renderModalList(val);
+  });
 
   // two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
