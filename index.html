@@ -57,15 +57,6 @@
       <div class="status" id="status"></div>
     </section>
 
-    <!-- NEW: Option C filter row -->
-    <section class="filterRow">
-      <div class="seg" role="group" aria-label="Filter rewards by relic availability">
-        <button id="fAll" class="segBtn active" type="button">All</button>
-        <button id="fAvail" class="segBtn" type="button">Available</button>
-        <button id="fVault" class="segBtn" type="button">Vaulted</button>
-      </div>
-    </section>
-
     <section class="results">
       <div id="cards"></div>
     </section>
@@ -80,11 +71,21 @@
 
       <div class="modalTitle" id="modalTitle">Choose relic</div>
 
-      <!-- two separate buttons -->
+      <!-- Mode buttons -->
       <div class="modeButtons">
         <button id="modeRelics" class="modeBtn active" type="button">Relics</button>
         <button id="modeItems" class="modeBtn" type="button">Items</button>
       </div>
+    </div>
+
+    <!-- NEW: Relics-only vault filter row (under Relics/Items) -->
+    <div class="modalFilterRow">
+      <div class="seg" role="group" aria-label="Filter relics by vault status">
+        <button id="rfAll" class="segBtn active" type="button">All</button>
+        <button id="rfAvail" class="segBtn" type="button">Available</button>
+        <button id="rfVault" class="segBtn" type="button">Vaulted</button>
+      </div>
+      <div class="modalFilterHint muted small" id="vaultHint"></div>
     </div>
 
     <div class="modalSearch">
