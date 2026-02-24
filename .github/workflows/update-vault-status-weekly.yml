@@ -3,8 +3,8 @@ name: Update Vault Status (Wiki)
 on:
   workflow_dispatch:
   schedule:
-    # Friday 21:00 UTC  (≈ 22:00 Sweden winter, 23:00 Sweden summer)
-    - cron: "0 21 * * 5"
+    # Friday 20:00 UTC (22:00 Sweden in summer, 21:00 in winter)
+    - cron: "0 20 * * 5"
 
 permissions:
   contents: write
@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -31,17 +29,16 @@ jobs:
         run: |
           python scripts/update_vault_status.py
           test -f data/vaultStatus.json
-          ls -la data || true
 
-      - name: Commit & push if changed
+      - name: Commit vaultStatus.json (only if changed)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f data/vaultStatus.json
+          git add data/vaultStatus.json
 
           if git diff --cached --quiet; then
-            echo "No vault status changes. Stopping."
+            echo "No changes to commit."
             exit 0
           fi
 
