@@ -530,7 +530,16 @@ async function boot() {
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
-  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
+  $("modalSearch")?.addEventListener("input", (e) => {
+  const val = e.target.value;
+
+  // If user starts typing while in item drilldown view, auto-exit to item results.
+  if (SEARCH_MODE === "items" && ITEM_DETAIL) {
+    ITEM_DETAIL = null;
+  }
+
+  renderModalList(val);
+});
 
   // two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
