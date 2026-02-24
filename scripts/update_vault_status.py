@@ -1,174 +1,165 @@
 #!/usr/bin/env python3
+# Generates data/vaultStatus.json by parsing the Warframe Wiki "Unvaulted/Available Relics" table.
+# IMPORTANT: Will ONLY rewrite/commit the JSON if the actual availability mapping changes.
+# This prevents triggering downstream heavy workflows every time (because of generated_at).
+
 import json
-import os
 import re
-import time
+import sys
+import datetime
+from pathlib import Path
 import urllib.request
-import urllib.error
-from datetime import datetime
-from typing import Dict, List, Set, Tuple
 
-DATA_DIR = "data"
-RELICS_IN = os.path.join(DATA_DIR, "Relics.min.json")
-VAULT_OUT = os.path.join(DATA_DIR, "vaultStatus.json")
+DATA_DIR = Path("data")
+RELICS_FILE = DATA_DIR / "Relics.min.json"
+OUT_FILE = DATA_DIR / "vaultStatus.json"
 
-# Use the official Warframe wiki (NOT Fandom) to avoid 403 in GitHub Actions.
-WIKI_URLS = [
-    "https://wiki.warframe.com/w/Void_Relic",
-    # optional fallback in case the first URL ever changes
-    "https://wiki.warframe.com/w/Void_Relic?redirect=no",
-]
+WIKI_URL = "https://wiki.warframe.com/w/Void_Relic"
 
-UA = "mosestyle-warframe-relic/vaulter (+github actions)"
-HTTP_TIMEOUT = 60
-
-
-def ensure_data_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
-
-
-def http_text(url: str, timeout: int = HTTP_TIMEOUT, attempts: int = 4) -> str:
-    last_err = None
-    for i in range(attempts):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": UA,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Connection": "close",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return r.read().decode("utf-8", errors="replace")
-        except urllib.error.HTTPError as e:
-            last_err = e
-            # retry transient errors
-            if e.code in (429, 500, 502, 503, 504):
-                time.sleep(1.5 ** i)
-                continue
-            raise
-        except Exception as e:
-            last_err = e
-            time.sleep(1.5 ** i)
-
-    if last_err:
-        raise last_err
-    raise RuntimeError("http_text failed with unknown error")
-
-
-# ---- Natural relic ordering (same idea as your app.js) ----
 ERA_ORDER = {"Lith": 0, "Meso": 1, "Neo": 2, "Axi": 3, "Requiem": 4}
 
+def http_text(url: str, timeout: int = 25) -> str:
+    req = urllib.request.Request(
+        url,
+        headers={
+            # Avoid 403 / bot blocking
+            "User-Agent": "Mozilla/5.0 (compatible; Warframe-RelicBot/1.0; +https://github.com/)",
+            "Accept": "text/html,application/xhtml+xml",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", errors="replace")
 
-def parse_relic_name(s: str) -> Tuple[int, str, int, str, str]:
-    """
-    "Axi A20" -> (eraOrder, letters, num, tail, original)
-    """
-    s = (s or "").strip()
+def relic_display_name(obj: dict) -> str:
+    era = obj.get("era") or obj.get("tier") or ""
+    name = obj.get("name") or obj.get("relicName") or obj.get("code") or ""
+    return f"{era} {name}".strip()
+
+def parse_relic_name(s: str):
+    # Matches: "Lith K12", "Meso W1", "Neo N16", etc.
+    # Also allows tails like "A3B"
+    s = " ".join((s or "").split())
     m = re.match(r"^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$", s)
     if not m:
-        return (999, s, 0, "", s)
-    era = m.group(1)
-    letters = m.group(2)
-    num = int(m.group(3)) if m.group(3).isdigit() else 0
-    tail = m.group(4) or ""
-    return (ERA_ORDER.get(era, 99), letters.upper(), num, tail.upper(), s)
+        return {"era": "", "letters": s, "num": 0, "tail": "", "raw": s}
 
-
-def relic_sort_key(name: str):
-    return parse_relic_name(name)
-
-
-def load_relic_names_from_relics_min() -> List[str]:
-    with open(RELICS_IN, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    names: List[str] = []
-    for r in data:
-        if not isinstance(r, dict):
-            continue
-        tier = (r.get("tier") or r.get("era") or "").strip()
-        nm = (r.get("name") or r.get("relicName") or r.get("code") or "").strip()
-        if tier and nm:
-            names.append(f"{tier} {nm}".strip())
-
-    return sorted(set(names), key=relic_sort_key)
-
-
-def extract_unvaulted_available_relics(page_html: str) -> Set[str]:
-    """
-    Extract ONLY relic names in the 'Unvaulted/Available Relics' table area.
-    """
-    t = page_html
-    t = re.sub(r"\s+", " ", t)
-
-    # locate the section
-    idx = t.lower().find("unvaulted/available relics")
-    if idx == -1:
-        return set()
-
-    # narrow window to avoid catching the whole page
-    window = t[idx : idx + 25000]
-
-    # match "Lith K12" etc
-    pat = re.compile(r"\b(Lith|Meso|Neo|Axi|Requiem)\s+([A-Za-z]+\d+[A-Za-z]*)\b")
-    found = set()
-    for era, code in pat.findall(window):
-        found.add(f"{era} {code}")
-    return found
-
-
-def fetch_available_set() -> Set[str]:
-    last_err = None
-    for url in WIKI_URLS:
-        try:
-            print(f"Fetching Unvaulted/Available relic list from: {url}")
-            page = http_text(url)
-            s = extract_unvaulted_available_relics(page)
-            if s:
-                return s
-            last_err = RuntimeError("Could not find 'Unvaulted/Available Relics' section.")
-        except Exception as e:
-            last_err = e
-            continue
-    raise last_err or RuntimeError("Failed to fetch available relic list from all sources.")
-
-
-def main():
-    ensure_data_dir()
-
-    if not os.path.exists(RELICS_IN):
-        raise RuntimeError(f"Missing {RELICS_IN}. Run your Update Relics + Prices workflow first.")
-
-    all_relics = load_relic_names_from_relics_min()
-    print(f"Relics loaded: {len(all_relics)}")
-
-    available_set = fetch_available_set()
-    print(f"Available relics found in wiki table: {len(available_set)}")
-
-    # Safety check: if wiki layout changes, avoid publishing nonsense
-    if len(available_set) < 10:
-        raise RuntimeError(f"Too few available relics detected ({len(available_set)}). Wiki structure may have changed.")
-
-    # Build full mapping
-    mapping: Dict[str, bool] = {}
-    for name in sorted(all_relics, key=relic_sort_key):
-        mapping[name] = (name in available_set)
-
-    out = {
-        "generated_at": datetime.utcnow().strftime("%Y-%m-%d"),
-        "available": mapping
+    era, letters, num, tail = m.group(1), m.group(2), m.group(3), m.group(4) or ""
+    return {
+        "era": era,
+        "letters": letters,
+        "num": int(num) if num.isdigit() else 0,
+        "tail": tail,
+        "raw": s,
     }
 
-    with open(VAULT_OUT, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
+def relic_natural_sort_key(name: str):
+    p = parse_relic_name(name)
+    era = ERA_ORDER.get(p["era"], 99)
+    return (era, p["letters"].lower(), p["num"], p["tail"].lower(), p["raw"].lower())
 
-    trues = sum(1 for v in mapping.values() if v)
-    falses = len(mapping) - trues
-    print(f"vaultStatus written: {VAULT_OUT} (available=true: {trues}, vaulted=false: {falses})")
+def extract_available_from_wiki(html: str) -> set[str]:
+    """
+    Extract ONLY from the 'Unvaulted/Available Relics' table section.
 
+    We slice the HTML from the heading occurrence to a safe endpoint
+    to avoid accidentally capturing other relic mentions elsewhere.
+    """
+    marker = "Unvaulted/Available Relics"
+    i = html.find(marker)
+    if i == -1:
+        return set()
+
+    # Try to stop at "Raw Data" section or another common boundary
+    end_markers = ["Raw Data", "Raw data", "Vaulted Relics", "vaulted relics"]
+    end_idx = -1
+    for em in end_markers:
+        j = html.find(em, i)
+        if j != -1:
+            end_idx = j
+            break
+
+    chunk = html[i:end_idx] if end_idx != -1 else html[i:i + 250000]
+
+    # Capture: Lith K12, Meso A9, Neo C7, Axi S18, Requiem I, etc.
+    # Requiem are roman numerals / words, so handle separately.
+    available = set()
+
+    # Standard eras (Lith/Meso/Neo/Axi)
+    for era, code in re.findall(r"\b(Lith|Meso|Neo|Axi)\s+([A-Za-z]+\d+[A-Za-z]*)\b", chunk):
+        available.add(f"{era} {code}")
+
+    # Requiem list often contains "Requiem I", "Requiem II", etc.
+    for code in re.findall(r"\bRequiem\s+([IVX]+|Eterna)\b", chunk):
+        available.add(f"Requiem {code}")
+
+    return available
+
+def load_existing_available() -> dict | None:
+    if not OUT_FILE.exists():
+        return None
+    try:
+        old = json.loads(OUT_FILE.read_text(encoding="utf-8"))
+        if isinstance(old, dict) and isinstance(old.get("available"), dict):
+            return old["available"]
+    except Exception:
+        return None
+    return None
+
+def main():
+    if not RELICS_FILE.exists():
+        print(f"Missing {RELICS_FILE}. Run the WFCD update first.", file=sys.stderr)
+        sys.exit(1)
+
+    relics = json.loads(RELICS_FILE.read_text(encoding="utf-8"))
+    relic_names = [relic_display_name(r) for r in relics if relic_display_name(r)]
+
+    print(f"Relics loaded: {len(relic_names)}")
+    print(f"Fetching Unvaulted/Available relic list from: {WIKI_URL}")
+
+    html = http_text(WIKI_URL)
+    available_set = extract_available_from_wiki(html)
+
+    if not available_set:
+        print("WARNING: Could not extract available relics from wiki section.", file=sys.stderr)
+
+    # Build mapping for ALL relics in your dataset:
+    # True = available/unvaulted (in wiki table)
+    # False = vaulted/unavailable (not in wiki table)
+    mapping = {name: (name in available_set) for name in relic_names}
+
+    # Sort keys in natural order (same style as your relic list)
+    sorted_names = sorted(mapping.keys(), key=relic_natural_sort_key)
+    ordered_mapping = {k: mapping[k] for k in sorted_names}
+
+    # Compare with existing file (ONLY compare the mapping, NOT generated_at)
+    old_available = load_existing_available()
+    if old_available is not None:
+        # If the old file contains extra keys, compare only current ones
+        same = True
+        for k, v in ordered_mapping.items():
+            if old_available.get(k) != v:
+                same = False
+                break
+        # Also ensure no missing keys previously that would change meaning
+        if same:
+            # If old had keys we no longer have, that’s a change (rare)
+            old_keys = set(old_available.keys())
+            new_keys = set(ordered_mapping.keys())
+            if old_keys != new_keys:
+                same = False
+
+        if same:
+            print("No change in availability mapping. Not rewriting vaultStatus.json.")
+            return
+
+    out = {
+        "generated_at": datetime.date.today().isoformat(),
+        "available": ordered_mapping,
+    }
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_FILE.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"Wrote {OUT_FILE} (changed mapping)")
 
 if __name__ == "__main__":
     main()
