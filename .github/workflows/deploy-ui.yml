@@ -1,10 +1,11 @@
 name: Deploy UI to GitHub Pages
 
-on:
+onon:
   workflow_run:
     workflows: ["Vault Safety Re-Check (After Data Update)"]
     types:
       - completed
+  workflow_dispatch:
 
 permissions:
   contents: write
