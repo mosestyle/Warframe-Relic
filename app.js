@@ -73,7 +73,7 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Vault status helpers ----------------
+// ---------------- Vault helpers ----------------
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -83,7 +83,6 @@ function escapeHtml(s) {
     .replaceAll("'", "&#39;");
 }
 
-// You asked for this function shape:
 function relicIsAvailable(relicName) {
   if (!VAULT || !relicName) return null;
 
@@ -104,51 +103,66 @@ function relicIsAvailable(relicName) {
   return null;
 }
 
-function formatRelicFromText(fromStr) {
-  // "Lith A1, Lith A2" -> wrap each relic in a span with available/vaulted classes
-  const parts = String(fromStr || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  if (parts.length === 0) return "";
-
-  return parts.map(rn => {
-    const avail = relicIsAvailable(rn);
-    const cls =
-      avail === true ? "relicName available" :
-      avail === false ? "relicName vaulted" :
-      "relicName";
-    return `<span class="${cls}">${escapeHtml(rn)}</span>`;
-  }).join(", ");
-}
-
-// ✅ single relic name formatter (used in item drilldown list)
-function formatRelicNameHtml(relicName) {
+function formatRelicNameSpan(relicName) {
   const clean = (relicName || "").trim();
-  if (!clean) return "";
-
   const avail = relicIsAvailable(clean);
   const cls =
     avail === true ? "relicName available" :
     avail === false ? "relicName vaulted" :
     "relicName";
-
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// ✅ Option B: 10px dot (used in Relics list)
 function relicDotHtml(relicName) {
   const clean = (relicName || "").trim();
-  if (!clean) return "";
-
   const avail = relicIsAvailable(clean);
   const cls =
     avail === true ? "relicDot available" :
     avail === false ? "relicDot vaulted" :
     "relicDot unknown";
-
   return `<span class="${cls}" aria-hidden="true"></span>`;
+}
+
+// ---------------- Option C: results filter ----------------
+let FILTER_MODE = "all"; // "all" | "available" | "vaulted"
+let LAST_REWARDS_RAW = null;
+
+function setFilterMode(mode) {
+  FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
+
+  $("fAll")?.classList.toggle("active", FILTER_MODE === "all");
+  $("fAvail")?.classList.toggle("active", FILTER_MODE === "available");
+  $("fVault")?.classList.toggle("active", FILTER_MODE === "vaulted");
+
+  if (Array.isArray(LAST_REWARDS_RAW)) {
+    renderCards(applyFilterToRewards(LAST_REWARDS_RAW));
+  }
+}
+
+function filterRelicListByMode(relicNames) {
+  if (!Array.isArray(relicNames)) return [];
+  if (FILTER_MODE === "all") return relicNames;
+
+  return relicNames.filter(rn => {
+    const avail = relicIsAvailable(rn);
+    if (avail === null) return false; // unknown hidden in filtered views
+    return (FILTER_MODE === "available") ? (avail === true) : (avail === false);
+  });
+}
+
+function applyFilterToRewards(rewardsRaw) {
+  const out = [];
+  for (const r of rewardsRaw) {
+    const kept = filterRelicListByMode(r.fromArr);
+    if (kept.length === 0) continue;
+    out.push({ ...r, fromArr: kept });
+  }
+  return out;
+}
+
+function formatRelicListHtml(fromArr) {
+  const arr = Array.isArray(fromArr) ? fromArr : [];
+  return arr.map(formatRelicNameSpan).join(", ");
 }
 
 // ---------------- Item -> relic index ----------------
@@ -190,7 +204,6 @@ function buildItemIndex() {
     out.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
     info.relics = out;
 
-    // attach plat once at build time
     info.plat = platForItem(info.displayName);
   }
 
@@ -245,7 +258,6 @@ function openModal(targetKey) {
   const search = $("modalSearch");
   if (search) search.value = "";
 
-  // Always default to Relics (as requested)
   setSearchMode("relic");
 
   modal.classList.remove("hidden");
@@ -295,7 +307,7 @@ function renderItemDetailView() {
   });
   listEl.appendChild(back);
 
-  // Header row (item + price)
+  // Header row
   const header = document.createElement("div");
   header.className = "modalItem";
   header.innerHTML = `
@@ -307,21 +319,13 @@ function renderItemDetailView() {
   `;
   listEl.appendChild(header);
 
-  // Relic list
-  if (!ITEM_DETAIL.relics || ITEM_DETAIL.relics.length === 0) {
-    const row = document.createElement("div");
-    row.className = "modalItem";
-    row.innerHTML = `<strong>No relic match</strong><span>Try clearing the search</span>`;
-    listEl.appendChild(row);
-    return;
-  }
-
-  for (const e of ITEM_DETAIL.relics.slice(0, 250)) {
+  // Relic list (colored)
+  for (const e of (ITEM_DETAIL.relics || []).slice(0, 250)) {
     const row = document.createElement("div");
     row.className = "modalItem";
     row.innerHTML = `
       <div class="modalRowTop">
-        <strong>${formatRelicNameHtml(e.relicName)}</strong>
+        <strong>${formatRelicNameSpan(e.relicName)}</strong>
       </div>
       <span>${escapeHtml(e.rarityLabel || "Tap to select")}</span>
     `;
@@ -334,7 +338,6 @@ function renderModalList(filter) {
   const listEl = $("modalList");
   if (!listEl) return;
 
-  // If we are in item drilldown view
   if (SEARCH_MODE === "items" && ITEM_DETAIL) {
     renderItemDetailView();
     return;
@@ -343,7 +346,7 @@ function renderModalList(filter) {
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
-  // ---------- ITEMS MODE ----------
+  // ITEMS MODE
   if (SEARCH_MODE === "items") {
     if (!q) {
       const row = document.createElement("div");
@@ -355,7 +358,6 @@ function renderModalList(filter) {
 
     if (!ITEM_TO_RELICS) buildItemIndex();
 
-    // Collect matches (keep fast)
     const matches = [];
     for (const [key, info] of ITEM_TO_RELICS.entries()) {
       if (key.includes(q)) matches.push(info);
@@ -370,7 +372,6 @@ function renderModalList(filter) {
       return;
     }
 
-    // Sort matches by plat desc (unknown last), then name
     matches.sort((a, b) => {
       const ap = (typeof a.plat === "number") ? a.plat : -1;
       const bp = (typeof b.plat === "number") ? b.plat : -1;
@@ -379,11 +380,7 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const relicPreview = info.relics
-        .slice(0, 10)
-        .map(e => e.relicName)
-        .join(" • ");
-
+      const relicPreview = info.relics.slice(0, 10).map(e => e.relicName).join(" • ");
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
@@ -396,7 +393,6 @@ function renderModalList(filter) {
         <div class="modalSub">${escapeHtml(relicPreview)}${info.relics.length > 10 ? " …" : ""}</div>
       `;
 
-      // Click -> open drilldown list to choose relic
       row.addEventListener("click", () => {
         ITEM_DETAIL = info;
         renderItemDetailView();
@@ -408,26 +404,21 @@ function renderModalList(filter) {
     return;
   }
 
-  // ---------- RELICS MODE ----------
+  // RELICS MODE (with dots)
   const list = q
     ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 800)
     : RELIC_NAMES.slice(0, 800);
 
   for (const name of list) {
-    const dot = relicDotHtml(name);
-
     const row = document.createElement("div");
     row.className = "modalItem";
-
-    // Option B: name left + 10px dot right
     row.innerHTML = `
       <div class="modalRowTop">
         <strong>${escapeHtml(name)}</strong>
-        ${dot}
+        ${relicDotHtml(name)}
       </div>
       <span>Tap to select</span>
     `;
-
     row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
@@ -435,44 +426,41 @@ function renderModalList(filter) {
 
 // ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
-  const all = [];
+  const merged = new Map();
 
   for (const r of relicsPicked) {
     const drops = r.drops ?? r.rewards ?? [];
+    const rName = relicDisplayName(r);
+
     for (const d of drops) {
       const item = d.item ?? d.name ?? d.reward ?? "Unknown";
       const rarity = rarityToLabel(d.rarity ?? d.chance ?? d.tier ?? "");
       const plat = platForItem(item);
-      all.push({
-        item,
-        from: relicDisplayName(r),
-        rarity,
-        plat: plat ?? -1
-      });
+
+      const prev = merged.get(item);
+      if (!prev) {
+        merged.set(item, {
+          item,
+          rarity,
+          plat: (plat ?? -1),
+          fromSet: new Set([rName])
+        });
+      } else {
+        prev.fromSet.add(rName);
+        prev.plat = Math.max(prev.plat, (plat ?? -1));
+      }
     }
   }
 
-  // merge duplicates
-  const merged = new Map();
-  for (const e of all) {
-    const prev = merged.get(e.item);
-    if (!prev) {
-      merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
-    } else {
-      prev.fromSet.add(e.from);
-      prev.plat = Math.max(prev.plat, e.plat);
-    }
-  }
-
-  const final = [...merged.values()].map(x => ({
+  const finalRaw = [...merged.values()].map(x => ({
     item: x.item,
-    from: [...x.fromSet].join(", "),
     rarity: x.rarity,
-    plat: x.plat
+    plat: x.plat,
+    fromArr: [...x.fromSet].sort(relicNaturalCompare)
   }));
 
-  final.sort((a, b) => b.plat - a.plat);
-  return final;
+  finalRaw.sort((a, b) => b.plat - a.plat);
+  return finalRaw;
 }
 
 function renderCards(list) {
@@ -488,7 +476,7 @@ function renderCards(list) {
         <div class="itemName">${escapeHtml(e.item)}</div>
         <div class="itemMeta">
           <span class="badge">${escapeHtml(e.rarity || "")}</span>
-          <span>${formatRelicFromText(e.from)}</span>
+          <span>${formatRelicListHtml(e.fromArr)}</span>
         </div>
       </div>
       <div class="cardRight">
@@ -517,11 +505,12 @@ function showRewards() {
     return;
   }
 
-  const rewards = mergeAndSortRewards(relicsPicked);
-  renderCards(rewards);
+  LAST_REWARDS_RAW = mergeAndSortRewards(relicsPicked);
+  renderCards(applyFilterToRewards(LAST_REWARDS_RAW));
 
-  const priced = rewards.filter(r => r.plat >= 0).length;
-  setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
+  const filtered = applyFilterToRewards(LAST_REWARDS_RAW);
+  const priced = filtered.filter(r => r.plat >= 0).length;
+  setStatus(`Showing ${filtered.length} unique rewards • priced: ${priced}`);
 }
 
 // ---------------- Boot ----------------
@@ -538,7 +527,6 @@ async function boot() {
     PRICES = {};
   }
 
-  // Vault status is optional; app still works without it (just no color)
   try {
     const vaultRes = await fetch("./data/vaultStatus.json", { cache: "no-store" });
     VAULT = await vaultRes.json();
@@ -548,7 +536,6 @@ async function boot() {
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
-  // Build item index once
   buildItemIndex();
 
   const footer = $("footer");
@@ -559,7 +546,7 @@ async function boot() {
   $("modalSearch")?.addEventListener("input", (e) => {
     const val = e.target.value;
 
-    // If user starts typing while in item drilldown view, auto-exit to item results.
+    // if typing while in item drilldown, auto-exit to item results
     if (SEARCH_MODE === "items" && ITEM_DETAIL) {
       ITEM_DETAIL = null;
     }
@@ -567,7 +554,6 @@ async function boot() {
     renderModalList(val);
   });
 
-  // two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
   $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
 
@@ -588,10 +574,17 @@ async function boot() {
       }
     });
 
+    LAST_REWARDS_RAW = null;
     $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
 
+  // Option C filter buttons
+  $("fAll")?.addEventListener("click", () => setFilterMode("all"));
+  $("fAvail")?.addEventListener("click", () => setFilterMode("available"));
+  $("fVault")?.addEventListener("click", () => setFilterMode("vaulted"));
+
+  setFilterMode("all");
   setStatus("Ready");
 }
 
