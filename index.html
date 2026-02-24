@@ -3,15 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Moses - Warframe Relic Reward Valus</title>
+  <title>Moses - Warframe Relic Reward Values</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="wrap">
     <h1>Moses - Warframe Relic Reward Values</h1>
-    <p class="muted">Pick 1-4 relics • See all possible rewards • Sort by platinum value 
+    <p class="muted">
+      Pick 1-4 relics • See all possible rewards • Sort by platinum value
       🟢 Available / Unvaulted
-      🔴 Vaulted.</p>
+      🔴 Vaulted.
+    </p>
   </header>
 
   <main class="wrap card">
@@ -55,6 +57,15 @@
       <div class="status" id="status"></div>
     </section>
 
+    <!-- NEW: Option C filter row -->
+    <section class="filterRow">
+      <div class="seg" role="group" aria-label="Filter rewards by relic availability">
+        <button id="fAll" class="segBtn active" type="button">All</button>
+        <button id="fAvail" class="segBtn" type="button">Available</button>
+        <button id="fVault" class="segBtn" type="button">Vaulted</button>
+      </div>
+    </section>
+
     <section class="results">
       <div id="cards"></div>
     </section>
@@ -69,7 +80,7 @@
 
       <div class="modalTitle" id="modalTitle">Choose relic</div>
 
-      <!-- NEW: two separate buttons -->
+      <!-- two separate buttons -->
       <div class="modeButtons">
         <button id="modeRelics" class="modeBtn active" type="button">Relics</button>
         <button id="modeItems" class="modeBtn" type="button">Items</button>
