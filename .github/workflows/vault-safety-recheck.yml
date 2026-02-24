@@ -1,0 +1,66 @@
+name: Vault Safety Re-Check (After Data Update)
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Update Relics + Prices (On Vault Change)"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "vault-safety"
+  cancel-in-progress: true
+
+jobs:
+  safety:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide if we should run (did data change?)
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          set -e
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Data workflow head_sha: $HEAD_SHA"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git checkout main
+
+          # Only run safety check if the data workflow produced a commit that touched data files.
+          if git diff --name-only "$HEAD_SHA..HEAD" | grep -E -q "^data/(Relics\.min\.json|prices\.json)$"; then
+            echo "Data changed -> running safety vault re-check."
+          else
+            echo "No relic/price changes -> skipping safety vault re-check."
+            exit 0
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Re-generate vaultStatus.json from Wiki
+        run: |
+          python scripts/update_vault_status.py
+          test -f data/vaultStatus.json
+
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -f data/vaultStatus.json
+
+          if git diff --cached --quiet; then
+            echo "No safety vault changes."
+            exit 0
+          fi
+
+          git commit -m "Vault safety recheck (wiki)"
+          git push
