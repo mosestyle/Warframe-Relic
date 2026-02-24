@@ -126,16 +126,15 @@ function formatRelicNameSpan(relicName) {
 // ---------------- Relic filter in MODAL (Relics list only) ----------------
 let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
 
+// ✅ counts ONLY available/vaulted (ignore unknown)
 function countVaultStates() {
-  // Counts based on your RELIC_NAMES list (only relics we actually show)
-  let available = 0, vaulted = 0, unknown = 0;
+  let available = 0, vaulted = 0;
   for (const name of RELIC_NAMES) {
     const v = relicIsAvailable(name);
     if (v === true) available++;
     else if (v === false) vaulted++;
-    else unknown++;
   }
-  return { available, vaulted, unknown, total: RELIC_NAMES.length };
+  return { available, vaulted };
 }
 
 function setRelicFilterMode(mode) {
@@ -148,12 +147,13 @@ function setRelicFilterMode(mode) {
   const hint = $("vaultHint");
   if (hint) {
     const counts = countVaultStates();
+
     if (RELIC_FILTER_MODE === "available") {
       hint.textContent = `Showing unvaulted only (${counts.available})`;
     } else if (RELIC_FILTER_MODE === "vaulted") {
       hint.textContent = `Showing vaulted only (${counts.vaulted})`;
     } else {
-      hint.textContent = "";
+      hint.textContent = `Available: ${counts.available} • Vaulted: ${counts.vaulted}`;
     }
   }
 
@@ -244,10 +244,10 @@ function setSearchMode(mode) {
 
   setButtonsActive();
 
-  // ✅ NEW: hide filter row in Items mode
+  // hide filter row in Items mode
   setVaultFilterRowVisible(SEARCH_MODE === "relic");
 
-  // Optional: reset relic filter when entering Items mode
+  // reset filter hint when entering items
   if (SEARCH_MODE === "items") setRelicFilterMode("all");
 
   const search = $("modalSearch");
@@ -463,14 +463,14 @@ function mergeAndSortRewards(relicsPicked) {
     if (!prev) {
       merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
     } else {
-      prev.fromSet.add(e.from);
+      prev.fromSet.add(e.fromSet ? e.fromSet : e.from);
       prev.plat = Math.max(prev.plat, e.plat);
     }
   }
 
   const final = [...merged.values()].map(x => ({
     item: x.item,
-    from: [...x.fromSet].join(", "),
+    from: x.fromSet ? [...x.fromSet].join(", ") : x.from,
     rarity: x.rarity,
     plat: x.plat
   }));
@@ -592,8 +592,9 @@ async function boot() {
     setStatus("Cleared");
   });
 
-  // ensure correct visibility on first load
+  // default visibility + default hint
   setVaultFilterRowVisible(true);
+  setRelicFilterMode("all");
 
   setStatus("Ready");
 }
