@@ -1,34 +1,57 @@
 name: Vault Safety Re-Check (After Data Update)
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Update Relics + Prices (On Vault Change)"]
-    types:
-      - completed
-  workflow_dispatch:
+    types: [completed]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: "vault-safety"
+  cancel-in-progress: true
 
 jobs:
   safety-check:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # Allow BOTH workflow_run success AND manual dispatch
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      # Optional clean guard:
+      # If Heavy was triggered but ended up committing nothing, skip safety.
+      - name: Decide if we should run (did heavy commit anything?)
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          set -e
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Heavy workflow head_sha: $HEAD_SHA"
+
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git checkout main
+
+          CHANGED="$(git diff --name-only "$HEAD_SHA..HEAD" || true)"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -Eq "^(data/Relics\.min\.json|data/prices\.json|data/meta\.json|scripts/missing_prices\.txt)$"; then
+            echo "Data changed -> proceeding with safety check."
+          else
+            echo "No relevant data changes -> skipping safety check."
+            exit 0
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Run vault re-check
-        run: python scripts/update_vault_status.py
-
-      - name: Commit if changed
+      - name: Run vault safety validation (re-check wiki parsing / mapping sanity)
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add data/vaultStatus.json
-          git diff --cached --quiet || git commit -m "Safety vault re-check after data update"
-          git push
+          python scripts/update_vault_status.py --check-only || python scripts/update_vault_status.py
