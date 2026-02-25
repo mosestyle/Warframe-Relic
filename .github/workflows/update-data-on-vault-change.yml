@@ -1,37 +1,93 @@
 name: Update Relics + Prices (On Vault Change)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "data/vaultStatus.json"
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Update Vault Status (Wiki)"]
+    types: [completed]
 
 permissions:
   contents: write
+  actions: write
+
+concurrency:
+  group: "relic-price-update"
+  cancel-in-progress: true
 
 jobs:
   update-data:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      # Decide whether Heavy should actually run (ONLY for workflow_run trigger)
+      # Manual runs should ALWAYS run Heavy.
+      - name: Decide if we should run (did vaultStatus.json change?)
+        if: ${{ github.event_name == 'workflow_run' }}
+        run: |
+          set -e
+          echo "RUN_HEAVY=false" >> $GITHUB_ENV
+
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          echo "Vault workflow head_sha: $HEAD_SHA"
+
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          git checkout main
+
+          if git diff --name-only "$HEAD_SHA..HEAD" | grep -q "^data/vaultStatus\.json$"; then
+            echo "vaultStatus.json changed -> proceeding."
+            echo "RUN_HEAVY=true" >> $GITHUB_ENV
+          else
+            echo "vaultStatus.json did NOT change -> skipping heavy update."
+          fi
+
+      - name: Default RUN_HEAVY=true for manual runs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "RUN_HEAVY=true" >> $GITHUB_ENV
+
+      - name: Set up Python
+        if: ${{ env.RUN_HEAVY == 'true' }}
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
-        run: pip install requests
-
-      - name: Run update_data.py
-        run: python scripts/update_data.py
-
-      - name: Commit data changes (if any)
+      - name: Generate data (Relics + Prices)
+        if: ${{ env.RUN_HEAVY == 'true' }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add data/
-          git diff --cached --quiet || git commit -m "Auto-update relic + price data (vault change)"
+          python scripts/update_data.py
+          ls -la data || true
+
+      - name: Commit & push if changed (force add data/)
+        if: ${{ env.RUN_HEAVY == 'true' }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -f data/ || true
+          git add -f scripts/missing_prices.txt || true
+
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update relic + price data"
           git push
+
+      # ✅ MANUAL FALLBACK:
+      # If YOU manually run Heavy, we explicitly trigger Safety afterwards,
+      # so you always get: Heavy -> Safety -> Deploy.
+      - name: Trigger Safety workflow (manual heavy runs only)
+        if: ${{ always() && github.event_name == 'workflow_dispatch' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Manually triggered Heavy -> dispatching Safety workflow..."
+          gh workflow run "vault-safety-recheck.yml" --ref main
