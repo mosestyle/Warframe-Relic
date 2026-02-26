@@ -5,6 +5,8 @@ on:
   workflow_run:
     workflows: ["Vault Safety Re-Check (After Data Update)"]
     types: [completed]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -17,15 +19,17 @@ concurrency:
 
 jobs:
   deploy:
-    # Allow manual runs, and run after Safety ONLY when Safety succeeded
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Pages
+      - name: Setup Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
