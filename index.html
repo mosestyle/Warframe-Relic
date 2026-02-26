@@ -3,99 +3,86 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Moses - Warframe Relic Reward Value</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Moses - Warframe Relic Reward Values</title>
+  <link rel="stylesheet" href="style.css?v=1" />
 </head>
+
 <body>
-  <header class="wrap">
-    <h1>Moses - Warframe Relic Reward Value</h1>
-    <p class="muted">
-      Pick 1-4 relics • See all possible rewards • Sort by platinum value
-      🟢 Available / Unvaulted
-      🔴 Vaulted.
-    </p>
-  </header>
+  <div class="wrap">
+    <header class="top">
+      <h1>Moses - Warframe Relic Reward Values</h1>
+      <p class="subtitle">
+        Pick 1-4 relics • See all possible rewards • Sort by platinum value
+        <span class="dot available"></span> Available / Unvaulted
+        <span class="dot vaulted"></span> Vaulted.
+      </p>
+    </header>
 
-  <main class="wrap card">
-    <section class="grid">
-      <div class="field">
-        <label>Relic 1</label>
-        <button class="pickerBtn" data-target="r1" type="button">
-          <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-          <span class="chev">▾</span>
-        </button>
+    <section class="panel">
+      <div class="pickers">
+        <div class="picker">
+          <div class="pickerLabel">Relic 1</div>
+          <button class="pickerBtn" data-target="r1"><span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span></button>
+        </div>
+        <div class="picker">
+          <div class="pickerLabel">Relic 2</div>
+          <button class="pickerBtn" data-target="r2"><span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span></button>
+        </div>
+        <div class="picker">
+          <div class="pickerLabel">Relic 3</div>
+          <button class="pickerBtn" data-target="r3"><span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span></button>
+        </div>
+        <div class="picker">
+          <div class="pickerLabel">Relic 4</div>
+          <button class="pickerBtn" data-target="r4"><span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span></button>
+        </div>
       </div>
 
-      <div class="field">
-        <label>Relic 2</label>
-        <button class="pickerBtn" data-target="r2" type="button">
-          <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-          <span class="chev">▾</span>
-        </button>
+      <div class="actions">
+        <button id="btnShow" class="btn primary">Show rewards</button>
+        <button id="btnClear" class="btn">Clear</button>
       </div>
 
-      <div class="field">
-        <label>Relic 3</label>
-        <button class="pickerBtn" data-target="r3" type="button">
-          <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-          <span class="chev">▾</span>
-        </button>
-      </div>
-
-      <div class="field">
-        <label>Relic 4</label>
-        <button class="pickerBtn" data-target="r4" type="button">
-          <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-          <span class="chev">▾</span>
-        </button>
-      </div>
+      <div id="status" class="status"></div>
     </section>
 
-    <!-- ACTION BUTTONS -->
-    <section class="actions">
-      <button id="btnShow" type="button">Show rewards</button>
-      <button id="btnClear" class="ghost" type="button">Clear</button>
-    </section>
+    <section id="cards" class="cards"></section>
 
-    <!-- STATUS MOVED BELOW BUTTONS -->
-    <div class="status" id="status"></div>
-
-    <section class="results">
-      <div id="cards"></div>
-    </section>
-
-    <footer class="muted small" id="footer"></footer>
-  </main>
-
-  <!-- Fullscreen Relic Picker -->
-  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modalTop">
-      <button id="modalClose" class="modalClose" type="button">✕</button>
-
-      <div class="modalTitle" id="modalTitle">Choose relic</div>
-
-      <div class="modeButtons">
-        <button id="modeRelics" class="modeBtn active" type="button">Relics</button>
-        <button id="modeItems" class="modeBtn" type="button">Items</button>
-      </div>
-    </div>
-
-    <div class="modalFilterRow">
-      <div class="seg" role="group" aria-label="Filter relics by vault status">
-        <button id="rfAll" class="segBtn active" type="button">All</button>
-        <button id="rfAvail" class="segBtn" type="button">Available</button>
-        <button id="rfVault" class="segBtn" type="button">Vaulted</button>
-      </div>
-      <div class="modalFilterHint muted small" id="vaultHint"></div>
-    </div>
-
-    <div class="modalSearch">
-      <input id="modalSearch" type="text" placeholder="Search: e.g. Meso C1 / Neo N16 / Axi S18" />
-    </div>
-
-    <div id="modalList" class="modalList"></div>
+    <footer id="footer" class="footer"></footer>
   </div>
 
-  <script src="app.js"></script>
+  <!-- Modal -->
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modalBackdrop"></div>
+    <div class="modalCard">
+      <div class="modalTop">
+        <button id="modalClose" class="modalClose" aria-label="Close">✕</button>
+        <div class="modalTitleRow">
+          <div id="modalTitle" class="modalTitle">Choose relic</div>
+          <div class="modeButtons">
+            <button id="modeRelics" class="modeBtn active">Relics</button>
+            <button id="modeItems" class="modeBtn">Items</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modalBody">
+        <input id="modalSearch" class="modalSearch" placeholder="Search: e.g. Meso C1 / Neo N16 / Axi S18" />
+
+        <div class="modalFilterRow">
+          <div class="filterButtons">
+            <button id="rfAll" class="filterBtn active">All</button>
+            <button id="rfAvail" class="filterBtn">Available</button>
+            <button id="rfVault" class="filterBtn">Vaulted</button>
+          </div>
+          <div id="vaultHint" class="vaultHint">Available: 0 • Vaulted: 0</div>
+        </div>
+
+        <div id="modalList" class="modalList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=1"></script>
 </body>
 </html>
