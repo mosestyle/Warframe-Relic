@@ -123,7 +123,15 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// ✅ NEW: format "Lith A3, Lith D7" into colored spans
+// Format relic names into "Lith A1 • Meso B3" with colored names
+function formatRelicBulletsHtml(names) {
+  const arr = Array.isArray(names) ? names : [names];
+  const cleaned = arr.map(x => String(x ?? "").trim()).filter(Boolean);
+  if (cleaned.length === 0) return "";
+  return cleaned.map(n => formatRelicNameSpan(n)).join(" • ");
+}
+
+// ✅ NEW: format "Lith A3, Lith D7" into colored spans (used in rewards list)
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -133,13 +141,6 @@ function formatFromRelicsHtml(fromStr) {
   if (parts.length === 0) return escapeHtml(s);
 
   return parts.map(p => formatRelicNameSpan(p)).join(", ");
-}
-
-// ✅ NEW: format bullet list "Lith A1 • Lith A2 • Neo A7" into colored spans
-function formatRelicBulletsHtml(relicNames) {
-  const arr = (relicNames || []).map(x => String(x || "").trim()).filter(Boolean);
-  if (arr.length === 0) return "";
-  return arr.map(n => formatRelicNameSpan(n)).join(" • ");
 }
 
 // ---------------- Relic filter in MODAL (Relics list only) ----------------
