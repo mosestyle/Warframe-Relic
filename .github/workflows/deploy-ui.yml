@@ -5,38 +5,32 @@ on:
   workflow_run:
     workflows: ["Vault Safety Re-Check (After Data Update)"]
     types: [completed]
-  # Optional (recommended): if you edit UI files and push, deploy automatically.
-  push:
-    branches: [main]
-    paths:
-      - "index.html"
-      - "app.js"
-      - "style.css"
-      - "data/**"
 
 permissions:
   contents: write
 
 concurrency:
-  group: "pages-deploy"
+  group: "deploy-ui"
   cancel-in-progress: true
 
 jobs:
   deploy:
-    # Allow BOTH workflow_run success AND manual dispatch AND push
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # If you use a custom deploy method, keep it here.
-      # This is a simple "commit if changed" deploy pattern.
-      - name: Ensure data is present
-        run: ls -la data || true
+      - name: Cache-bust UI assets (update ?v=)
+        run: |
+          BUILD="${{ github.run_number }}"
+          # Update cache-busting query strings in index.html so browsers fetch latest assets
+          perl -0777 -pi -e 's/(style\.css\?v=)\d+/${1}'"$BUILD"'/g; s/(app\.js\?v=)\d+/${1}'"$BUILD"'/g' index.html
+          echo "index.html cache-bust set to v=$BUILD"
 
-      - name: Commit & push if needed (UI/data)
+      - name: Commit & push (only if changed)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -44,9 +38,9 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "No changes to deploy."
+            echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "Deploy UI/data"
+          git commit -m "Deploy UI"
           git push
