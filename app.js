@@ -128,7 +128,7 @@ function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
 
-  // split on commas (your merged reward list uses ", " between relics)
+  // split on commas (your data uses ", " when multiple relics exist)
   const parts = s.split(",").map(x => x.trim()).filter(Boolean);
   if (parts.length === 0) return escapeHtml(s);
 
@@ -139,6 +139,7 @@ function formatFromRelicsHtml(fromStr) {
 let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
 
 function countVaultStates() {
+  // Counts based on your RELIC_NAMES list (only relics we actually show)
   let available = 0, vaulted = 0, unknown = 0;
   for (const name of RELIC_NAMES) {
     const v = relicIsAvailable(name);
@@ -165,6 +166,7 @@ function setRelicFilterMode(mode) {
     } else if (RELIC_FILTER_MODE === "vaulted") {
       hint.textContent = `Showing vaulted only (${counts.vaulted})`;
     } else {
+      // show counts in ALL mode (exclude unknown)
       hint.textContent = `Available: ${counts.available} • Vaulted: ${counts.vaulted}`;
     }
   }
@@ -181,6 +183,7 @@ function relicPassesFilter(relicName) {
   return (RELIC_FILTER_MODE === "available") ? (avail === true) : (avail === false);
 }
 
+// Hide/show the filter row depending on mode
 function setVaultFilterRowVisible(visible) {
   const row = document.querySelector(".modalFilterRow");
   if (!row) return;
@@ -403,8 +406,12 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      // ✅ IMPORTANT FIX: colored relic names in preview
-      const relicPreviewHtml = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(" • ");
+      // ✅ ONLY CHANGE: make preview relic list colored (green/red) like Show rewards
+      const relicPreviewHtml = info.relics
+        .slice(0, 10)
+        .map(e => formatRelicNameSpan(e.relicName))
+        .join(" • ");
+
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
