@@ -15,6 +15,12 @@ function setStatus(msg) {
   if (el) el.textContent = msg || "";
 }
 
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
 function relicDisplayName(r) {
   const era = r.era ?? r.tier ?? "";
   const name = r.name ?? r.relicName ?? r.code ?? "";
@@ -38,16 +44,68 @@ function rarityToLabel(r) {
   return `Common (${rounded}%)`;
 }
 
+// ---------------- Vault availability helpers ----------------
+function relicIsAvailable(relicName) {
+  if (!VAULT || !relicName) return null;
+
+  // if file is { available: { "Lith K12": true, ... } }
+  if (VAULT.available && typeof VAULT.available === "object") {
+    const v = VAULT.available[relicName];
+    if (typeof v === "boolean") return v;
+  }
+
+  // fallback older formats
+  const v = VAULT[relicName];
+  if (typeof v === "boolean") return v;
+  if (v && typeof v === "object") {
+    if (typeof v.available === "boolean") return v.available;
+    if (typeof v.vaulted === "boolean") return !v.vaulted;
+  }
+
+  return null;
+}
+
+function formatRelicNameSpan(relicName) {
+  const clean = (relicName || "").trim();
+  const avail = relicIsAvailable(clean);
+  const cls =
+    avail === true ? "relicName available" :
+    avail === false ? "relicName vaulted" :
+    "relicName";
+  return `<span class="${cls}">${escapeHtml(clean)}</span>`;
+}
+
+function relicDotHtml(relicName) {
+  const clean = (relicName || "").trim();
+  const avail = relicIsAvailable(clean);
+  const cls =
+    avail === true ? "relicDot available" :
+    avail === false ? "relicDot vaulted" :
+    "relicDot";
+  return `<span class="${cls}" aria-hidden="true"></span>`;
+}
+
+// Used in rewards list: turns "Lith A1, Lith A2" into colored spans (text only)
+function formatFromRelicsHtml(fromText) {
+  const parts = String(fromText || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) return "";
+
+  return parts.map(p => formatRelicNameSpan(p)).join(", ");
+}
+
 // ---------------- Natural relic sorting ----------------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
   const s = (str || "").trim().replace(/\s+/g, " ");
   const m = s.match(/^(\w+)\s+([A-Za-z]+)(\d+)([A-Za-z]*)$/);
-  if (!m) return { era: "", code: s, letters: s, num: 0, tail: "" };
+  if (!m) return { era: "", letters: s, num: 0, tail: "" };
   return {
     era: m[1],
-    code: `${m[2]}${m[3]}${m[4] || ""}`,
     letters: m[2],
     num: parseInt(m[3], 10) || 0,
     tail: m[4] || ""
@@ -71,123 +129,6 @@ function relicNaturalCompare(a, b) {
   if (tc !== 0) return tc;
 
   return a.localeCompare(b);
-}
-
-// ---------------- Vault helpers ----------------
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function relicIsAvailable(relicName) {
-  if (!VAULT || !relicName) return null;
-
-  // if file is { available: { "Lith K12": true, ... } }
-  if (VAULT.available && typeof VAULT.available === "object") {
-    const v = VAULT.available[relicName];
-    if (typeof v === "boolean") return v;
-  }
-
-  // fallback older formats
-  const v = VAULT[relicName];
-  if (typeof v === "boolean") return v;
-  if (v && typeof v === "object") {
-    if (typeof v.available === "boolean") return v.available;
-    if (typeof v.vaulted === "boolean") return !v.vaulted;
-  }
-
-  return null;
-}
-
-function relicDotHtml(relicName) {
-  const clean = (relicName || "").trim();
-  const avail = relicIsAvailable(clean);
-  const cls =
-    avail === true ? "relicDot available" :
-    avail === false ? "relicDot vaulted" :
-    "relicDot unknown";
-  return `<span class="${cls}" aria-hidden="true"></span>`;
-}
-
-function formatRelicNameSpan(relicName) {
-  const clean = (relicName || "").trim();
-  const avail = relicIsAvailable(clean);
-  const cls =
-    avail === true ? "relicName available" :
-    avail === false ? "relicName vaulted" :
-    "relicName";
-  return `<span class="${cls}">${escapeHtml(clean)}</span>`;
-}
-
-// ✅ NEW: format "Lith A3, Lith D7" into colored spans
-function formatFromRelicsHtml(fromStr) {
-  const s = String(fromStr ?? "").trim();
-  if (!s) return "";
-
-  // split on commas (your data uses ", " when multiple relics exist)
-  const parts = s.split(",").map(x => x.trim()).filter(Boolean);
-  if (parts.length === 0) return escapeHtml(s);
-
-  return parts.map(p => formatRelicNameSpan(p)).join(", ");
-}
-
-// ---------------- Relic filter in MODAL (Relics list only) ----------------
-let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
-
-function countVaultStates() {
-  // Counts based on your RELIC_NAMES list (only relics we actually show)
-  let available = 0, vaulted = 0, unknown = 0;
-  for (const name of RELIC_NAMES) {
-    const v = relicIsAvailable(name);
-    if (v === true) available++;
-    else if (v === false) vaulted++;
-    else unknown++;
-  }
-  return { available, vaulted, unknown, total: RELIC_NAMES.length };
-}
-
-function setRelicFilterMode(mode) {
-  RELIC_FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
-
-  $("rfAll")?.classList.toggle("active", RELIC_FILTER_MODE === "all");
-  $("rfAvail")?.classList.toggle("active", RELIC_FILTER_MODE === "available");
-  $("rfVault")?.classList.toggle("active", RELIC_FILTER_MODE === "vaulted");
-
-  const hint = $("vaultHint");
-  if (hint) {
-    const counts = countVaultStates();
-
-    if (RELIC_FILTER_MODE === "available") {
-      hint.textContent = `Showing unvaulted only (${counts.available})`;
-    } else if (RELIC_FILTER_MODE === "vaulted") {
-      hint.textContent = `Showing vaulted only (${counts.vaulted})`;
-    } else {
-      // show counts in ALL mode (exclude unknown)
-      hint.textContent = `Available: ${counts.available} • Vaulted: ${counts.vaulted}`;
-    }
-  }
-
-  renderModalList($("modalSearch")?.value || "");
-}
-
-function relicPassesFilter(relicName) {
-  if (RELIC_FILTER_MODE === "all") return true;
-
-  const avail = relicIsAvailable(relicName);
-  if (avail === null) return false; // hide unknown in filtered views
-
-  return (RELIC_FILTER_MODE === "available") ? (avail === true) : (avail === false);
-}
-
-// Hide/show the filter row depending on mode
-function setVaultFilterRowVisible(visible) {
-  const row = document.querySelector(".modalFilterRow");
-  if (!row) return;
-  row.style.display = visible ? "" : "none";
 }
 
 // ---------------- Item -> relic index ----------------
@@ -216,6 +157,7 @@ function buildItemIndex() {
     }
   }
 
+  // de-dupe and sort relic lists
   for (const info of map.values()) {
     const seen = new Set();
     const out = [];
@@ -227,6 +169,8 @@ function buildItemIndex() {
     }
     out.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
     info.relics = out;
+
+    // attach plat once at build time
     info.plat = platForItem(info.displayName);
   }
 
@@ -258,12 +202,6 @@ function setSearchMode(mode) {
 
   setButtonsActive();
 
-  // hide filter row in Items mode
-  setVaultFilterRowVisible(SEARCH_MODE === "relic");
-
-  // reset relic filter when entering Items mode
-  if (SEARCH_MODE === "items") setRelicFilterMode("all");
-
   const search = $("modalSearch");
   if (search) {
     search.placeholder =
@@ -287,8 +225,8 @@ function openModal(targetKey) {
   const search = $("modalSearch");
   if (search) search.value = "";
 
+  // Always default to Relics (as requested)
   setSearchMode("relic");
-  setRelicFilterMode("all");
 
   modal.classList.remove("hidden");
   setTimeout(() => search?.focus(), 60);
@@ -322,10 +260,13 @@ function renderItemDetailView() {
 
   listEl.innerHTML = "";
 
+  // Back row
   const back = document.createElement("div");
   back.className = "modalItem";
   back.innerHTML = `
-    <div class="modalBack"><strong>← Back</strong></div>
+    <div class="modalBack">
+      <strong>← Back</strong>
+    </div>
     <span>Back to item results</span>
   `;
   back.addEventListener("click", () => {
@@ -334,6 +275,7 @@ function renderItemDetailView() {
   });
   listEl.appendChild(back);
 
+  // Header row (item + price)
   const header = document.createElement("div");
   header.className = "modalItem";
   header.innerHTML = `
@@ -345,13 +287,22 @@ function renderItemDetailView() {
   `;
   listEl.appendChild(header);
 
-  for (const e of (ITEM_DETAIL.relics || []).slice(0, 250)) {
+  // Relic list
+  if (!ITEM_DETAIL.relics || ITEM_DETAIL.relics.length === 0) {
+    const row = document.createElement("div");
+    row.className = "modalItem";
+    row.innerHTML = `<strong>No relic match</strong><span>Try clearing the search</span>`;
+    listEl.appendChild(row);
+    return;
+  }
+
+  // ✅ CHANGE: NO DOTS here — ONLY colored text
+  for (const e of ITEM_DETAIL.relics.slice(0, 250)) {
     const row = document.createElement("div");
     row.className = "modalItem";
     row.innerHTML = `
       <div class="modalRowTop">
         <strong>${formatRelicNameSpan(e.relicName)}</strong>
-        ${relicDotHtml(e.relicName)}
       </div>
       <span>${escapeHtml(e.rarityLabel || "Tap to select")}</span>
     `;
@@ -364,6 +315,7 @@ function renderModalList(filter) {
   const listEl = $("modalList");
   if (!listEl) return;
 
+  // If we are in item drilldown view
   if (SEARCH_MODE === "items" && ITEM_DETAIL) {
     renderItemDetailView();
     return;
@@ -372,7 +324,7 @@ function renderModalList(filter) {
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
-  // ITEMS MODE
+  // ---------- ITEMS MODE ----------
   if (SEARCH_MODE === "items") {
     if (!q) {
       const row = document.createElement("div");
@@ -384,6 +336,7 @@ function renderModalList(filter) {
 
     if (!ITEM_TO_RELICS) buildItemIndex();
 
+    // Collect matches (keep fast)
     const matches = [];
     for (const [key, info] of ITEM_TO_RELICS.entries()) {
       if (key.includes(q)) matches.push(info);
@@ -393,11 +346,12 @@ function renderModalList(filter) {
     if (matches.length === 0) {
       const row = document.createElement("div");
       row.className = "modalItem";
-      row.innerHTML = `<strong>No item match</strong><span>Try shorter (e.g. wisp neuroptics)</span>`;
+      row.innerHTML = `<strong>No item match</strong><span>Try shorter (e.g. mesa chassis)</span>`;
       listEl.appendChild(row);
       return;
     }
 
+    // Sort matches by plat desc (unknown last), then name
     matches.sort((a, b) => {
       const ap = (typeof a.plat === "number") ? a.plat : -1;
       const bp = (typeof b.plat === "number") ? b.plat : -1;
@@ -406,7 +360,12 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const relicPreview = info.relics.slice(0, 10).map(e => e.relicName).join(" • ");
+      // ✅ CHANGE: preview relics are now colored text too
+      const relicPreviewHtml = info.relics
+        .slice(0, 10)
+        .map(e => formatRelicNameSpan(e.relicName))
+        .join(" • ");
+
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
@@ -416,26 +375,25 @@ function renderModalList(filter) {
           <strong>${escapeHtml(info.displayName)}</strong>
           <span class="modalPrice">${priceText}</span>
         </div>
-        <div class="modalSub">${escapeHtml(relicPreview)}${info.relics.length > 10 ? " …" : ""}</div>
+        <div class="modalSub">${relicPreviewHtml}${info.relics.length > 10 ? " …" : ""}</div>
       `;
+
+      // Click -> open drilldown list to choose relic
       row.addEventListener("click", () => {
         ITEM_DETAIL = info;
         renderItemDetailView();
       });
+
       listEl.appendChild(row);
     }
 
     return;
   }
 
-  // RELICS MODE (filtered + dots)
-  const base = q
-    ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q))
-    : RELIC_NAMES;
-
-  const list = base
-    .filter(relicPassesFilter)
-    .slice(0, 800);
+  // ---------- RELICS MODE (filtered + dots) ----------
+  const list = q
+    ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q)).slice(0, 800)
+    : RELIC_NAMES.slice(0, 800);
 
   for (const name of list) {
     const row = document.createElement("div");
@@ -471,6 +429,7 @@ function mergeAndSortRewards(relicsPicked) {
     }
   }
 
+  // merge duplicates
   const merged = new Map();
   for (const e of all) {
     const prev = merged.get(e.item);
@@ -556,6 +515,7 @@ async function boot() {
     PRICES = {};
   }
 
+  // vaultStatus.json optional (colors will still work as "unknown" if missing)
   try {
     const vaultRes = await fetch("./data/vaultStatus.json", { cache: "no-store" });
     VAULT = await vaultRes.json();
@@ -565,25 +525,18 @@ async function boot() {
 
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
+  // Build item index once
   buildItemIndex();
 
   const footer = $("footer");
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
 
   $("modalClose")?.addEventListener("click", closeModal);
+  $("modalSearch")?.addEventListener("input", (e) => renderModalList(e.target.value));
 
-  $("modalSearch")?.addEventListener("input", (e) => {
-    const val = e.target.value;
-    if (SEARCH_MODE === "items" && ITEM_DETAIL) ITEM_DETAIL = null;
-    renderModalList(val);
-  });
-
+  // two separate mode buttons
   $("modeRelics")?.addEventListener("click", () => setSearchMode("relic"));
   $("modeItems")?.addEventListener("click", () => setSearchMode("items"));
-
-  $("rfAll")?.addEventListener("click", () => setRelicFilterMode("all"));
-  $("rfAvail")?.addEventListener("click", () => setRelicFilterMode("available"));
-  $("rfVault")?.addEventListener("click", () => setRelicFilterMode("vaulted"));
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
@@ -605,9 +558,6 @@ async function boot() {
     $("cards") && ($("cards").innerHTML = "");
     setStatus("Cleared");
   });
-
-  // ensure correct visibility on first load
-  setVaultFilterRowVisible(true);
 
   setStatus("Ready");
 }
