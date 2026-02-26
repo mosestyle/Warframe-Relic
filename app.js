@@ -123,15 +123,7 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// Format relic names into "Lith A1 • Meso B3" with colored names
-function formatRelicBulletsHtml(names) {
-  const arr = Array.isArray(names) ? names : [names];
-  const cleaned = arr.map(x => String(x ?? "").trim()).filter(Boolean);
-  if (cleaned.length === 0) return "";
-  return cleaned.map(n => formatRelicNameSpan(n)).join(" • ");
-}
-
-// ✅ NEW: format "Lith A3, Lith D7" into colored spans (used in rewards list)
+// ✅ NEW: format "Lith A3, Lith D7" into colored spans
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -141,6 +133,15 @@ function formatFromRelicsHtml(fromStr) {
   if (parts.length === 0) return escapeHtml(s);
 
   return parts.map(p => formatRelicNameSpan(p)).join(", ");
+}
+
+// ✅ NEW: format "Lith A1 • Lith A2 • Neo A1" into colored spans (for item-search preview)
+function formatRelicBulletsHtml(bulletsStr) {
+  const s = String(bulletsStr ?? "").trim();
+  if (!s) return "";
+  const parts = s.split("•").map(x => x.trim()).filter(Boolean);
+  if (parts.length === 0) return escapeHtml(s);
+  return parts.map(p => formatRelicNameSpan(p)).join(" • ");
 }
 
 // ---------------- Relic filter in MODAL (Relics list only) ----------------
@@ -414,8 +415,8 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const previewNames = info.relics.slice(0, 10).map(e => e.relicName);
-      const relicPreviewHtml = formatRelicBulletsHtml(previewNames);
+      const relicPreview = info.relics.slice(0, 10).map(e => e.relicName).join(" • ");
+      const relicPreviewHtml = formatRelicBulletsHtml(relicPreview);
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
