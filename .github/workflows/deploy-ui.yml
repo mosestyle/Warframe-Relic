@@ -7,40 +7,32 @@ on:
     types: [completed]
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "deploy-ui"
+  group: "pages"
   cancel-in-progress: true
 
 jobs:
   deploy:
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success')
+    # Allow manual runs, and run after Safety ONLY when Safety succeeded
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache-bust UI assets (update ?v=)
-        run: |
-          BUILD="${{ github.run_number }}"
-          # Update cache-busting query strings in index.html so browsers fetch latest assets
-          perl -0777 -pi -e 's/(style\.css\?v=)\d+/${1}'"$BUILD"'/g; s/(app\.js\?v=)\d+/${1}'"$BUILD"'/g' index.html
-          echo "index.html cache-bust set to v=$BUILD"
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
-      - name: Commit & push (only if changed)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
 
-          git add -A
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-
-          git commit -m "Deploy UI"
-          git push
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
