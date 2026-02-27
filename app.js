@@ -123,7 +123,7 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// ✅ format "Lith A3, Lith D7" into colored spans (used in reward cards)
+// ✅ NEW: format "Lith A3, Lith D7" into colored spans
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -406,8 +406,7 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      // ✅ ONLY CHANGE: make preview relic list colored, but still inline with " • "
-      const relicPreviewHtml = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(" • ");
+      const relicPreview = info.relics.slice(0, 10).map(e => e.relicName).join(" • ");
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
@@ -417,7 +416,7 @@ function renderModalList(filter) {
           <strong>${escapeHtml(info.displayName)}</strong>
           <span class="modalPrice">${priceText}</span>
         </div>
-        <div class="modalSub">${relicPreviewHtml}${info.relics.length > 10 ? " …" : ""}</div>
+        <div class="modalSub">${escapeHtml(relicPreview)}${info.relics.length > 10 ? " …" : ""}</div>
       `;
       row.addEventListener("click", () => {
         ITEM_DETAIL = info;
