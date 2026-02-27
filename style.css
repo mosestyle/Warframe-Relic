@@ -201,10 +201,10 @@ button.ghost { background: transparent; }
   align-items:center;
   gap:10px;
 }
-
 .modalBack strong{ font-size: 14px; }
-/* Fix: keep relic names inline in item-search modal */
-.modalSub .relicName {
-  display: inline;
-  margin-top: 0;
+
+/* ✅ Added: keep relic names inline in item-search modal preview */
+.modalSub .relicName{
+  display:inline;
+  margin-top:0;
 }
