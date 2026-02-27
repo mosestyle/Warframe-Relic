@@ -123,7 +123,14 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// ✅ format "Lith A3, Lith D7" into colored spans
+// Format an array of relic names into inline colored spans (keeps original " • " look)
+function formatRelicNamesInlineHtml(names, sep = " • ") {
+  const arr = Array.isArray(names) ? names : [];
+  if (!arr.length) return "";
+  return arr.map(n => formatRelicNameSpan(n)).join(sep);
+}
+
+// ✅ NEW: format "Lith A3, Lith D7" into colored spans
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -406,12 +413,7 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      // ✅ ONLY CHANGE: make preview relic list colored (green/red) like Show rewards
-      const relicPreviewHtml = info.relics
-        .slice(0, 10)
-        .map(e => formatRelicNameSpan(e.relicName))
-        .join(" • ");
-
+      const relicPreviewHtml = formatRelicNamesInlineHtml(info.relics.slice(0, 10).map(e => e.relicName));
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
