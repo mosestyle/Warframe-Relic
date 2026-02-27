@@ -123,7 +123,7 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// ✅ NEW: format "Lith A3, Lith D7" into colored spans
+// ✅ format "Lith A3, Lith D7" into colored spans (used in reward cards)
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -350,7 +350,7 @@ function renderItemDetailView() {
     row.className = "modalItem";
     row.innerHTML = `
       <div class="modalRowTop">
-        <strong>${escapeHtml(e.relicName)}</strong>
+        <strong>${formatRelicNameSpan(e.relicName)}</strong>
         ${relicDotHtml(e.relicName)}
       </div>
       <span>${escapeHtml(e.rarityLabel || "Tap to select")}</span>
@@ -406,9 +406,8 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const relicPreviewHtml = info.relics.slice(0, 10)
-        .map(e => formatRelicNameSpan(e.relicName))
-        .join(" • ");
+      // ✅ ONLY CHANGE: make preview relic list colored, but still inline with " • "
+      const relicPreviewHtml = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(" • ");
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
