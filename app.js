@@ -406,7 +406,7 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const relicPreview = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(" • ");
+      const relicPreview = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(", ");
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
