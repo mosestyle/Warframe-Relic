@@ -406,7 +406,13 @@ function renderModalList(filter) {
     });
 
     for (const info of matches.slice(0, 20)) {
-      const relicPreview = info.relics.slice(0, 10).map(e => formatRelicNameSpan(e.relicName)).join(", ");
+      // ✅ CHANGE 1: Wrap relic names in colored spans
+      // ✅ Keep your desired separator: " • "
+      const relicPreview = info.relics
+        .slice(0, 10)
+        .map(e => formatRelicNameSpan(e.relicName))
+        .join(" • ");
+
       const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
@@ -416,6 +422,7 @@ function renderModalList(filter) {
           <strong>${escapeHtml(info.displayName)}</strong>
           <span class="modalPrice">${priceText}</span>
         </div>
+        <!-- ✅ CHANGE 2: Do NOT escape relicPreview (it contains <span> tags) -->
         <div class="modalSub">${relicPreview}${info.relics.length > 10 ? " …" : ""}</div>
       `;
       row.addEventListener("click", () => {
