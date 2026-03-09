@@ -2,9 +2,6 @@ name: Deploy UI to GitHub Pages
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Update Relics + Prices (On Vault Change)"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -12,12 +9,11 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: true
 
 jobs:
   deploy:
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
