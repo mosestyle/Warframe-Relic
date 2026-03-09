@@ -3,10 +3,8 @@ name: Deploy UI to GitHub Pages
 on:
   workflow_dispatch:
   workflow_run:
-    workflows: ["Vault Safety Re-Check (After Data Update)"]
+    workflows: ["Update Relics + Prices (On Vault Change)"]
     types: [completed]
-  push:
-    branches: [main]
 
 permissions:
   contents: read
