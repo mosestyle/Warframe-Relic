@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: "vault-status"
+  group: vault-status
   cancel-in-progress: true
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
           git add data/vaultStatus.json
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No vault status changes to commit."
             exit 0
           fi
 
