@@ -1,4 +1,4 @@
-name: Update Relics + Prices (On Vault Change)
+name: Update Relics + Prices (After Vault Update)
 
 on:
   workflow_dispatch:
@@ -8,9 +8,10 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
-  group: "relic-price-update"
+  group: relic-price-update
   cancel-in-progress: true
 
 jobs:
@@ -48,3 +49,9 @@ jobs:
 
           git commit -m "Update relic + price data"
           git push
+
+      - name: Trigger Deploy UI
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run "deploy-ui.yml" --ref main
