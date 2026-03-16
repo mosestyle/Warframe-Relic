@@ -5,8 +5,8 @@
   --muted:#95a3bd;
   --line:#233049;
 
-  --avail:#41d27a;   /* green */
-  --vault:#f06a6a;   /* soft red */
+  --avail:#41d27a;
+  --vault:#f06a6a;
 }
 
 * { box-sizing:border-box; }
@@ -141,7 +141,7 @@ button.ghost { background: transparent; }
   box-shadow: inset 0 0 0 1px #2a3a5e;
 }
 
-/* Items row */
+/* Items controls */
 .itemFilterStack{
   width:100%;
   display:flex;
@@ -191,7 +191,7 @@ button.ghost { background: transparent; }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* Two-button mode switch */
+/* Mode switch */
 .modeButtons { display:flex; gap:8px; }
 .modeBtn{
   border:1px solid var(--line);
@@ -228,7 +228,6 @@ button.ghost { background: transparent; }
   line-height: 1.45;
 }
 
-/* Back row styling inside modal list */
 .modalBack{
   display:flex;
   align-items:center;
@@ -236,7 +235,6 @@ button.ghost { background: transparent; }
 }
 .modalBack strong{ font-size: 14px; }
 
-/* Keep relic names inline in item-search modal preview */
 .modalSub .relicName{
   display:inline;
   margin-top:0;
