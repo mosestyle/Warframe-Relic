@@ -352,7 +352,6 @@ function openModal(targetKey) {
   setSearchMode("relic");
 
   modal.classList.remove("hidden");
-  setTimeout(() => $("modalSearch")?.focus(), 60);
 }
 
 function closeModal() {
