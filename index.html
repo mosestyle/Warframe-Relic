@@ -51,13 +51,11 @@
       </div>
     </section>
 
-    <!-- ACTION BUTTONS -->
     <section class="actions">
       <button id="btnShow" type="button">Show rewards</button>
       <button id="btnClear" class="ghost" type="button">Clear</button>
     </section>
 
-    <!-- STATUS MOVED BELOW BUTTONS -->
     <div class="status" id="status"></div>
 
     <section class="results">
@@ -67,7 +65,6 @@
     <footer class="muted small" id="footer"></footer>
   </main>
 
-  <!-- Fullscreen Relic Picker -->
   <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalTop">
       <button id="modalClose" class="modalClose" type="button">✕</button>
@@ -80,13 +77,33 @@
       </div>
     </div>
 
-    <div class="modalFilterRow">
+    <!-- Relics mode filter row -->
+    <div class="modalFilterRow" id="relicFilterRow">
       <div class="seg" role="group" aria-label="Filter relics by vault status">
         <button id="rfAll" class="segBtn active" type="button">All</button>
         <button id="rfAvail" class="segBtn" type="button">Available</button>
         <button id="rfVault" class="segBtn" type="button">Vaulted</button>
       </div>
       <div class="modalFilterHint muted small" id="vaultHint"></div>
+    </div>
+
+    <!-- Items mode controls -->
+    <div class="modalFilterRow hidden" id="itemFilterRow">
+      <div class="itemFilterStack">
+        <div class="itemTopRow">
+          <button id="itemTopToggle" class="toggleBtn" type="button">Top Platinum</button>
+
+          <div id="itemSegWrap" class="hidden">
+            <div class="seg" role="group" aria-label="Filter top platinum items by relic vault status">
+              <button id="ifAll" class="segBtn active" type="button">All</button>
+              <button id="ifAvail" class="segBtn" type="button">Available</button>
+              <button id="ifVault" class="segBtn" type="button">Vaulted</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modalFilterHint muted small" id="itemHint"></div>
+      </div>
     </div>
 
     <div class="modalSearch">
