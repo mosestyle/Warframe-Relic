@@ -10,6 +10,9 @@ const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
 
+// Save/restore scroll position for Items list
+let ITEM_LIST_SCROLL_TOP = 0;
+
 function setStatus(msg) {
   const el = $("status");
   if (el) el.textContent = msg || "";
@@ -274,9 +277,11 @@ function setItemTopMode(enabled) {
     setItemFilterMode("all", false);
   }
 
+  ITEM_DETAIL = null;
+  ITEM_LIST_SCROLL_TOP = 0;
+
   updateItemHint();
   if (SEARCH_MODE === "items") {
-    ITEM_DETAIL = null;
     renderModalList($("modalSearch")?.value || "");
   }
 }
@@ -288,9 +293,11 @@ function setItemFilterMode(mode, rerender = true) {
   $("ifAvail")?.classList.toggle("active", ITEM_FILTER_MODE === "available");
   $("ifVault")?.classList.toggle("active", ITEM_FILTER_MODE === "vaulted");
 
+  ITEM_DETAIL = null;
+  ITEM_LIST_SCROLL_TOP = 0;
+
   updateItemHint();
   if (rerender && SEARCH_MODE === "items") {
-    ITEM_DETAIL = null;
     renderModalList($("modalSearch")?.value || "");
   }
 }
@@ -318,6 +325,7 @@ function setSearchMode(mode) {
     setRelicFilterMode("all");
   }
 
+  ITEM_LIST_SCROLL_TOP = 0;
   renderModalList("");
 }
 
@@ -333,6 +341,7 @@ function openModal(targetKey) {
   ITEM_DETAIL = null;
   ITEM_TOP_MODE = false;
   ITEM_FILTER_MODE = "all";
+  ITEM_LIST_SCROLL_TOP = 0;
 
   $("itemTopToggle")?.classList.remove("active");
   $("itemSegWrap")?.classList.add("hidden");
@@ -398,6 +407,7 @@ function renderItemDetailView() {
   if (!listEl || !ITEM_DETAIL) return;
 
   listEl.innerHTML = "";
+  listEl.scrollTop = 0;
 
   const back = document.createElement("div");
   back.className = "modalItem";
@@ -407,7 +417,7 @@ function renderItemDetailView() {
   `;
   back.addEventListener("click", () => {
     ITEM_DETAIL = null;
-    renderModalList($("modalSearch")?.value || "");
+    renderModalList($("modalSearch")?.value || "", { restoreItemScroll: true });
   });
   listEl.appendChild(back);
 
@@ -448,7 +458,7 @@ function renderItemDetailView() {
 }
 
 // ---------------- Main modal render ----------------
-function renderModalList(filter) {
+function renderModalList(filter, options = {}) {
   const listEl = $("modalList");
   if (!listEl) return;
 
@@ -481,6 +491,7 @@ function renderModalList(filter) {
         row.className = "modalItem";
         row.innerHTML = `<strong>No item match</strong><span>Try another search or change All / Available / Vaulted</span>`;
         listEl.appendChild(row);
+        listEl.scrollTop = 0;
         return;
       }
 
@@ -503,10 +514,19 @@ function renderModalList(filter) {
           <div class="modalSub">${relicPreview || "No matching relics"}${previewRelics.length > 10 ? " …" : ""}</div>
         `;
         row.addEventListener("click", () => {
+          ITEM_LIST_SCROLL_TOP = listEl.scrollTop;
           ITEM_DETAIL = info;
           renderItemDetailView();
         });
         listEl.appendChild(row);
+      }
+
+      if (options.restoreItemScroll) {
+        requestAnimationFrame(() => {
+          listEl.scrollTop = ITEM_LIST_SCROLL_TOP;
+        });
+      } else {
+        listEl.scrollTop = 0;
       }
 
       return;
@@ -520,6 +540,7 @@ function renderModalList(filter) {
       row.className = "modalItem";
       row.innerHTML = `<strong>Type an item name</strong><span>Example: Wisp Prime Chassis Blueprint</span>`;
       listEl.appendChild(row);
+      listEl.scrollTop = 0;
       return;
     }
 
@@ -534,6 +555,7 @@ function renderModalList(filter) {
       row.className = "modalItem";
       row.innerHTML = `<strong>No item match</strong><span>Try shorter (e.g. wisp neuroptics)</span>`;
       listEl.appendChild(row);
+      listEl.scrollTop = 0;
       return;
     }
 
@@ -557,10 +579,19 @@ function renderModalList(filter) {
         <div class="modalSub">${relicPreview}${info.relics.length > 10 ? " …" : ""}</div>
       `;
       row.addEventListener("click", () => {
+        ITEM_LIST_SCROLL_TOP = listEl.scrollTop;
         ITEM_DETAIL = info;
         renderItemDetailView();
       });
       listEl.appendChild(row);
+    }
+
+    if (options.restoreItemScroll) {
+      requestAnimationFrame(() => {
+        listEl.scrollTop = ITEM_LIST_SCROLL_TOP;
+      });
+    } else {
+      listEl.scrollTop = 0;
     }
 
     return;
@@ -588,6 +619,8 @@ function renderModalList(filter) {
     row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
+
+  listEl.scrollTop = 0;
 }
 
 // ---------------- Rewards render ----------------
@@ -713,6 +746,7 @@ async function boot() {
   $("modalSearch")?.addEventListener("input", (e) => {
     const val = e.target.value;
     if (SEARCH_MODE === "items" && ITEM_DETAIL) ITEM_DETAIL = null;
+    ITEM_LIST_SCROLL_TOP = 0;
     renderModalList(val);
   });
 
