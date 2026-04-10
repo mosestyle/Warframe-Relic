@@ -33,6 +33,11 @@ jobs:
           python scripts/update_data.py
           ls -la data || true
 
+      - name: Refresh vaultStatus again for newly added relics
+        run: |
+          python scripts/update_vault_status.py
+          test -f data/vaultStatus.json
+
       - name: Commit & push if changed
         run: |
           set -e
