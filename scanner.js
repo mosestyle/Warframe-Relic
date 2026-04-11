@@ -275,181 +275,161 @@
     };
   }
 
-  function extractOrderedRoots(globalTexts, uniqueRoots) {
-    const combined = normalizeText(globalTexts.join(" "));
-    const words = combined.split(" ").filter(Boolean);
+  function buildKnownRootMap(knownItems) {
+    const map = new Map();
+    for (const item of knownItems) {
+      if (!map.has(item.root)) map.set(item.root, []);
+      map.get(item.root).push(item);
+    }
+    return map;
+  }
 
-    const results = [];
+  function buildKnownComponentSet(knownItems) {
+    return [...new Set(knownItems.map(i => i.component).filter(Boolean))];
+  }
 
-    for (const root of uniqueRoots) {
-      let bestScore = 0;
-      let bestPos = Infinity;
+  function tokenize(text) {
+    return normalizeText(text).split(" ").filter(Boolean);
+  }
 
-      for (let i = 0; i < words.length; i++) {
-        for (let len = 1; len <= 4; len++) {
-          const gram = words.slice(i, i + len).join(" ");
-          if (!gram) continue;
+  function extractOrderedRootsFromOCR(globalTexts, knownRoots) {
+    const words = tokenize(globalTexts.join(" "));
+    const hits = [];
 
-          const score = stringScore(gram, root);
-          if (score > bestScore) {
-            bestScore = score;
-            bestPos = i;
+    for (let i = 0; i < words.length; i++) {
+      for (let len = 2; len <= 4; len++) {
+        const gram = words.slice(i, i + len).join(" ");
+        if (!gram.includes("prime")) continue;
+
+        let bestRoot = "";
+        let bestScore = 0;
+
+        for (const root of knownRoots) {
+          const s = stringScore(gram, root);
+          if (s > bestScore) {
+            bestScore = s;
+            bestRoot = root;
           }
         }
-      }
 
-      if (bestScore >= 0.60) {
-        results.push({ root, score: bestScore, pos: bestPos });
+        if (bestScore >= 0.88) {
+          hits.push({ root: bestRoot, pos: i, score: bestScore });
+        }
       }
     }
 
-    results.sort((a, b) => a.pos - b.pos || b.score - a.score);
+    hits.sort((a, b) => a.pos - b.pos || b.score - a.score);
 
     const out = [];
     const seen = new Set();
-    for (const r of results) {
-      if (seen.has(r.root)) continue;
-      seen.add(r.root);
-      out.push(r.root);
+    for (const h of hits) {
+      if (seen.has(h.root)) continue;
+      seen.add(h.root);
+      out.push(h.root);
     }
-
     return out.slice(0, 4);
   }
 
-  function extractOrderedComponents(globalTexts, uniqueComponents) {
-    const combined = normalizeText(globalTexts.join(" "));
-    const words = combined.split(" ").filter(Boolean);
+  function extractOrderedComponentsFromOCR(globalTexts, knownComponents) {
+    const words = tokenize(globalTexts.join(" "));
+    const hits = [];
 
-    const results = [];
+    for (let i = 0; i < words.length; i++) {
+      for (let len = 1; len <= 3; len++) {
+        const gram = words.slice(i, i + len).join(" ");
+        if (!gram) continue;
 
-    for (const component of uniqueComponents) {
-      if (!component) continue;
+        let bestComp = "";
+        let bestScore = 0;
 
-      let bestScore = 0;
-      let bestPos = Infinity;
-
-      for (let i = 0; i < words.length; i++) {
-        for (let len = 1; len <= 4; len++) {
-          const gram = words.slice(i, i + len).join(" ");
-          if (!gram) continue;
-
-          const score = stringScore(gram, component);
-          if (score > bestScore) {
-            bestScore = score;
-            bestPos = i;
+        for (const comp of knownComponents) {
+          const s = stringScore(gram, comp);
+          if (s > bestScore) {
+            bestScore = s;
+            bestComp = comp;
           }
         }
-      }
 
-      if (bestScore >= 0.64) {
-        results.push({ component, score: bestScore, pos: bestPos });
+        if (bestScore >= 0.86) {
+          hits.push({ component: bestComp, pos: i, score: bestScore });
+        }
       }
     }
 
-    results.sort((a, b) => a.pos - b.pos || b.score - a.score);
+    hits.sort((a, b) => a.pos - b.pos || b.score - a.score);
 
     const out = [];
     const seen = new Set();
-    for (const r of results) {
-      if (seen.has(r.component)) continue;
-      seen.add(r.component);
-      out.push(r.component);
+    for (const h of hits) {
+      if (seen.has(h.component)) continue;
+      seen.add(h.component);
+      out.push(h.component);
     }
-
     return out.slice(0, 4);
   }
 
-  function scoreItemForSlot(item, localCandidates, slotRoot, slotComponent) {
-    let localBest = 0;
-    let localSource = "";
+  function findLocalRoot(localCandidates, knownRoots) {
+    let bestRoot = "";
+    let bestScore = 0;
+    let bestSource = "";
 
     for (const c of localCandidates) {
-      const score = stringScore(c, item.norm);
-      if (score > localBest) {
-        localBest = score;
-        localSource = c;
+      for (const root of knownRoots) {
+        const s = stringScore(c, root);
+        if (s > bestScore) {
+          bestScore = s;
+          bestRoot = root;
+          bestSource = c;
+        }
       }
     }
 
-    let score = localBest * 0.70;
-
-    if (slotRoot && item.root === slotRoot) score += 0.22;
-    if (slotComponent && item.component === slotComponent) score += 0.18;
-
-    return {
-      score: Math.min(1, score),
-      source: localSource || [slotRoot, slotComponent].filter(Boolean).join(" ")
-    };
+    if (bestScore >= 0.80) {
+      return { root: bestRoot, score: bestScore, source: bestSource };
+    }
+    return null;
   }
 
-  function bestMatchForSlot(slotIndex, localCandidates, knownItems, usedNames, slotRoot, slotComponent, prices) {
+  function findLocalComponent(localCandidates, knownComponents) {
+    let bestComp = "";
+    let bestScore = 0;
+    let bestSource = "";
+
+    for (const c of localCandidates) {
+      for (const comp of knownComponents) {
+        const s = stringScore(c, comp);
+        if (s > bestScore) {
+          bestScore = s;
+          bestComp = comp;
+          bestSource = c;
+        }
+      }
+    }
+
+    if (bestScore >= 0.78) {
+      return { component: bestComp, score: bestScore, source: bestSource };
+    }
+    return null;
+  }
+
+  function bestItemFromCandidates(candidates, candidateItems) {
     let best = null;
     let bestScore = 0;
     let bestSource = "";
 
-    for (const item of knownItems) {
-      if (usedNames.has(item.name)) continue;
-
-      if (slotRoot && item.root !== slotRoot) continue;
-      if (slotComponent && item.component && item.component !== slotComponent && localCandidates.length) {
-        // keep flexibility, do not hard-block if OCR is weak
-      }
-
-      const scored = scoreItemForSlot(item, localCandidates, slotRoot, slotComponent);
-      if (scored.score > bestScore) {
-        bestScore = scored.score;
-        best = item;
-        bestSource = scored.source;
-      }
-    }
-
-    if (!best || bestScore < 0.46) return null;
-
-    usedNames.add(best.name);
-
-    return {
-      slot: slotIndex,
-      ocrText: bestSource || [slotRoot, slotComponent].filter(Boolean).join(" "),
-      itemName: best.name,
-      confidence: bestScore,
-      price: typeof prices[best.name] === "number" ? prices[best.name] : null
-    };
-  }
-
-  function fallbackRemaining(globalCandidates, knownItems, usedNames, prices, maxNeeded) {
-    const out = [];
-
-    for (const item of knownItems) {
-      if (usedNames.has(item.name)) continue;
-
-      let bestScore = 0;
-      let bestSource = "";
-
-      for (const c of globalCandidates) {
+    for (const c of candidates) {
+      for (const item of candidateItems) {
         const s = stringScore(c, item.norm);
         if (s > bestScore) {
           bestScore = s;
+          best = item;
           bestSource = c;
         }
       }
-
-      if (bestScore >= 0.52) {
-        out.push({
-          ocrText: bestSource,
-          itemName: item.name,
-          confidence: bestScore,
-          price: typeof prices[item.name] === "number" ? prices[item.name] : null
-        });
-      }
     }
 
-    out.sort((a, b) =>
-      b.confidence - a.confidence ||
-      (b.price ?? -1) - (a.price ?? -1) ||
-      a.itemName.localeCompare(b.itemName)
-    );
-
-    return out.slice(0, maxNeeded);
+    if (!best) return null;
+    return { item: best, score: bestScore, source: bestSource };
   }
 
   function renderResults(container, rows) {
@@ -571,17 +551,15 @@
 
       const globalTexts = [wholeText, rewardBandText];
 
-      const uniqueRoots = [...new Set(knownItems.map(i => i.root).filter(Boolean))];
-      const uniqueComponents = [...new Set(knownItems.map(i => i.component).filter(Boolean))];
+      const rootMap = buildKnownRootMap(knownItems);
+      const knownRoots = [...rootMap.keys()];
+      const knownComponents = buildKnownComponentSet(knownItems);
 
-      const orderedRoots = extractOrderedRoots(globalTexts, uniqueRoots);
-      const orderedComponents = extractOrderedComponents(globalTexts, uniqueComponents);
+      const orderedRoots = extractOrderedRootsFromOCR(globalTexts, knownRoots);
+      const orderedComponents = extractOrderedComponentsFromOCR(globalTexts, knownComponents);
 
-      const globalLines = [...cleanLines(wholeText), ...cleanLines(rewardBandText)];
-      const globalCandidates = buildCandidatesFromLines([...new Set(globalLines)]);
-
-      const usedNames = new Set();
       const matchedRows = [];
+      const usedNames = new Set();
       const debugParts = [];
 
       debugParts.push(
@@ -601,53 +579,52 @@
         const localLines = [...new Set([...cleanLines(fullText), ...cleanLines(textOnly)])];
         const localCandidates = buildCandidatesFromLines(localLines);
 
-        const slotRoot = orderedRoots[i] || "";
-        const slotComponent = orderedComponents[i] || "";
+        const localRootHit = findLocalRoot(localCandidates, knownRoots);
+        const localCompHit = findLocalComponent(localCandidates, knownComponents);
 
-        const best = bestMatchForSlot(
-          i,
-          localCandidates,
-          knownItems,
-          usedNames,
-          slotRoot,
-          slotComponent,
-          prices
-        );
+        const slotRoot = localRootHit?.root || orderedRoots[i] || "";
+        const slotComponent = localCompHit?.component || orderedComponents[i] || "";
+
+        let candidateItems = knownItems;
+
+        if (slotRoot && rootMap.has(slotRoot)) {
+          candidateItems = rootMap.get(slotRoot);
+        }
+
+        if (slotComponent) {
+          const narrowed = candidateItems.filter(i2 => i2.component === slotComponent);
+          if (narrowed.length > 0) candidateItems = narrowed;
+        }
+
+        candidateItems = candidateItems.filter(i2 => !usedNames.has(i2.name));
+
+        const best = bestItemFromCandidates(localCandidates, candidateItems);
+
+        let chosen = null;
+        if (best && best.score >= 0.46) {
+          chosen = {
+            slot: i,
+            ocrText: best.source || [slotRoot, slotComponent].filter(Boolean).join(" "),
+            itemName: best.item.name,
+            confidence: best.score,
+            price: typeof prices[best.item.name] === "number" ? prices[best.item.name] : null
+          };
+          usedNames.add(best.item.name);
+          matchedRows.push(chosen);
+        }
 
         debugParts.push(
           `COLUMN ${i + 1}\n` +
           `FULL OCR:\n${fullText.trim() || "(none)"}\n\n` +
           `TEXT OCR:\n${textOnly.trim() || "(none)"}\n\n` +
           `LOCAL CANDIDATES:\n${localCandidates.join("\n") || "(none)"}\n\n` +
+          `LOCAL ROOT: ${localRootHit ? `${localRootHit.root} (${(localRootHit.score * 100).toFixed(0)}%)` : "(none)"}\n` +
+          `LOCAL COMPONENT: ${localCompHit ? `${localCompHit.component} (${(localCompHit.score * 100).toFixed(0)}%)` : "(none)"}\n` +
           `SLOT ROOT: ${slotRoot || "(none)"}\n` +
           `SLOT COMPONENT: ${slotComponent || "(none)"}\n\n` +
-          `BEST MATCH:\n${best ? `${best.itemName} (${(best.confidence * 100).toFixed(0)}%)` : "(none)"}\n` +
+          `BEST MATCH:\n${chosen ? `${chosen.itemName} (${(chosen.confidence * 100).toFixed(0)}%)` : "(none)"}\n` +
           `----------------------------------------`
         );
-
-        if (best) matchedRows.push(best);
-      }
-
-      if (matchedRows.length < 4) {
-        const fallback = fallbackRemaining(
-          globalCandidates,
-          knownItems,
-          usedNames,
-          prices,
-          4 - matchedRows.length
-        );
-
-        for (const row of fallback) {
-          usedNames.add(row.itemName);
-          matchedRows.push(row);
-        }
-
-        if (fallback.length) {
-          debugParts.push(
-            `FALLBACK MATCHES\n` +
-            fallback.map(f => `${f.itemName} (${(f.confidence * 100).toFixed(0)}%) from "${f.ocrText}"`).join("\n")
-          );
-        }
       }
 
       matchedRows.sort((a, b) =>
