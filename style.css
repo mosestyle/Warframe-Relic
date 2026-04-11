@@ -241,7 +241,7 @@ button.ghost { background: transparent; }
   margin-top:0;
 }
 
-/* NEW: screenshot scanner styles only */
+/* Screenshot scanner */
 .scannerSection{
   border-top:1px solid var(--line);
   padding: 14px 16px 16px;
@@ -319,6 +319,7 @@ button.ghost { background: transparent; }
 .scannerMedal{
   font-size:20px;
   line-height:1;
+  min-height:24px;
 }
 .scannerPlat{
   margin-top:6px;
@@ -346,4 +347,9 @@ button.ghost { background: transparent; }
   margin:10px 0 0;
   color:var(--muted);
   font-size:12px;
+}
+.scannerDebugActions{
+  margin-top:10px;
+  display:flex;
+  justify-content:flex-start;
 }
