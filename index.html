@@ -62,7 +62,6 @@
       <div id="cards"></div>
     </section>
 
-    <!-- NEW: screenshot scanner, added without changing your existing UI above -->
     <section class="scannerSection">
       <div class="scannerTop">
         <div class="scannerTitle">Scan reward screenshot</div>
@@ -89,6 +88,10 @@
         <summary>OCR debug</summary>
         <pre id="scanDebugText"></pre>
       </details>
+
+      <div id="scanDebugActions" class="scannerDebugActions hidden">
+        <button id="scanCopyDebugBtn" class="ghost" type="button">Copy OCR debug</button>
+      </div>
     </section>
 
     <footer class="muted small" id="footer"></footer>
@@ -106,7 +109,6 @@
       </div>
     </div>
 
-    <!-- RELICS filter row -->
     <div class="modalFilterRow" id="relicFilterRow">
       <div class="seg" role="group" aria-label="Filter relics by vault status">
         <button id="rfAll" class="segBtn active" type="button">All</button>
@@ -116,7 +118,6 @@
       <div class="modalFilterHint muted small" id="vaultHint"></div>
     </div>
 
-    <!-- ITEMS controls -->
     <div class="modalFilterRow hidden" id="itemFilterRow">
       <div class="itemFilterStack">
         <div class="itemTopRow">
