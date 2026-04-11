@@ -1,101 +1,103 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Warframe Relic Reward Value Calculator</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Moses - Warframe Relic Reward Values</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="wrap">
-    <h1>Warframe Relic Reward Value Calculator</h1>
-    <p class="muted small">
-      Pick up to 4 relics to see all possible rewards sorted by Platinum value.
-      Available relics are shown in <span class="relicName available">green</span>,
-      vaulted relics in <span class="relicName vaulted">red</span>.
+  <header class="wrap">
+    <h1>Moses - Warframe Relic Reward Values</h1>
+    <p class="muted">
+      Pick 1-4 relics • See all possible rewards • Sort by platinum value
+      🟢 Available / Unvaulted
+      🔴 Vaulted.
     </p>
+  </header>
 
-    <div class="card">
-      <div class="grid">
-        <div class="field">
-          <label>Relic 1</label>
-          <button class="pickerBtn" data-target="r1" type="button">
-            <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▾</span>
-          </button>
-        </div>
+  <main class="wrap card">
+    <section class="grid">
+      <div class="field">
+        <label>Relic 1</label>
+        <button class="pickerBtn" data-target="r1" type="button">
+          <span id="r1Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
 
-        <div class="field">
-          <label>Relic 2</label>
-          <button class="pickerBtn" data-target="r2" type="button">
-            <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▾</span>
-          </button>
-        </div>
+      <div class="field">
+        <label>Relic 2</label>
+        <button class="pickerBtn" data-target="r2" type="button">
+          <span id="r2Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
 
-        <div class="field">
-          <label>Relic 3</label>
-          <button class="pickerBtn" data-target="r3" type="button">
-            <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▾</span>
-          </button>
-        </div>
+      <div class="field">
+        <label>Relic 3</label>
+        <button class="pickerBtn" data-target="r3" type="button">
+          <span id="r3Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
 
-        <div class="field">
-          <label>Relic 4</label>
-          <button class="pickerBtn" data-target="r4" type="button">
-            <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
-            <span class="chev">▾</span>
-          </button>
+      <div class="field">
+        <label>Relic 4</label>
+        <button class="pickerBtn" data-target="r4" type="button">
+          <span id="r4Text" class="pickerPlaceholder">Tap to choose (Lith/Meso/Neo/Axi)</span>
+          <span class="chev">▾</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="btnShow" type="button">Show rewards</button>
+      <button id="btnClear" class="ghost" type="button">Clear</button>
+    </section>
+
+    <div class="status" id="status"></div>
+
+    <section class="results">
+      <div id="cards"></div>
+    </section>
+
+    <!-- NEW: screenshot scanner, added without changing your existing UI above -->
+    <section class="scannerSection">
+      <div class="scannerTop">
+        <div class="scannerTitle">Scan reward screenshot</div>
+        <div class="scannerText muted small">
+          Upload a screenshot of the reward screen. The image is scanned locally in your browser and is not saved to GitHub.
         </div>
       </div>
 
-      <div class="actions">
-        <button id="btnShow" type="button">Show Rewards</button>
-        <button id="btnClear" type="button" class="ghost">Clear</button>
-        <div class="status" id="status">Loading…</div>
+      <div class="scannerActions">
+        <button id="scanUploadBtn" type="button">Upload screenshot</button>
+        <button id="scanClearBtn" class="ghost" type="button">Clear scan</button>
+        <input id="scanFileInput" type="file" accept="image/*" class="hidden" />
       </div>
 
-      <div class="results" id="cards"></div>
+      <div id="scanStatus" class="muted small scannerStatus">Ready to scan</div>
 
-      <section class="scannerSection">
-        <div class="scannerHeaderRow">
-          <div>
-            <h2 class="scannerTitle">Scan Reward Screenshot</h2>
-            <p class="scannerIntro muted small">
-              Upload a screenshot of the reward screen. The image is scanned locally in your browser and is not saved to the repo.
-            </p>
-          </div>
-        </div>
+      <div id="scanPreviewWrap" class="scannerPreviewWrap hidden">
+        <img id="scanPreview" class="scannerPreview" alt="Reward screenshot preview" />
+      </div>
 
-        <div class="scannerActions">
-          <button id="scanUploadBtn" type="button">Upload Screenshot</button>
-          <button id="scanClearBtn" class="ghost" type="button">Clear Scan</button>
-          <input id="scanFileInput" type="file" accept="image/*" class="hidden" />
-        </div>
+      <div id="scanResults" class="scannerResults hidden"></div>
 
-        <div id="scanStatus" class="muted small">Ready to scan</div>
-
-        <div id="scanPreviewWrap" class="scanPreviewWrap hidden">
-          <img id="scanPreview" class="scanPreview" alt="Uploaded reward screenshot preview" />
-        </div>
-
-        <div id="scanResults" class="scanResults hidden"></div>
-
-        <details id="scanDebugWrap" class="scanDebugWrap hidden">
-          <summary>OCR debug</summary>
-          <pre id="scanDebugText" class="scanDebugText"></pre>
-        </details>
-      </section>
-    </div>
+      <details id="scanDebugWrap" class="scannerDebug hidden">
+        <summary>OCR debug</summary>
+        <pre id="scanDebugText"></pre>
+      </details>
+    </section>
 
     <footer class="muted small" id="footer"></footer>
-  </div>
+  </main>
 
-  <!-- Modal picker -->
-  <div id="modal" class="modal hidden" aria-hidden="true">
+  <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modalTop">
       <button id="modalClose" class="modalClose" type="button">✕</button>
+
       <div class="modalTitle" id="modalTitle">Choose relic</div>
 
       <div class="modeButtons">
@@ -104,13 +106,33 @@
       </div>
     </div>
 
-    <div class="modalFilterRow">
-      <div class="seg" role="group" aria-label="Relic availability filter">
+    <!-- RELICS filter row -->
+    <div class="modalFilterRow" id="relicFilterRow">
+      <div class="seg" role="group" aria-label="Filter relics by vault status">
         <button id="rfAll" class="segBtn active" type="button">All</button>
         <button id="rfAvail" class="segBtn" type="button">Available</button>
         <button id="rfVault" class="segBtn" type="button">Vaulted</button>
       </div>
-      <div class="modalFilterHint muted small" id="vaultHint">Available: 0 • Vaulted: 0</div>
+      <div class="modalFilterHint muted small" id="vaultHint"></div>
+    </div>
+
+    <!-- ITEMS controls -->
+    <div class="modalFilterRow hidden" id="itemFilterRow">
+      <div class="itemFilterStack">
+        <div class="itemTopRow">
+          <button id="itemTopToggle" class="toggleBtn" type="button">Top Platinum</button>
+        </div>
+
+        <div id="itemSegWrap" class="hidden">
+          <div class="seg" role="group" aria-label="Filter top platinum items by relic vault status">
+            <button id="ifAll" class="segBtn active" type="button">All</button>
+            <button id="ifAvail" class="segBtn" type="button">Available</button>
+            <button id="ifVault" class="segBtn" type="button">Vaulted</button>
+          </div>
+        </div>
+
+        <div class="modalFilterHint muted small" id="itemHint"></div>
+      </div>
     </div>
 
     <div class="modalSearch">
