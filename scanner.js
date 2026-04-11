@@ -1,5 +1,5 @@
 (function () {
-  const MEDALS = ["🥇", "🥈", "🥉", "4th"];
+  const MEDALS = ["🥇", "🥈", "🥉", ""];
 
   function normalizeText(text) {
     return String(text || "")
@@ -13,10 +13,11 @@
       .replace(/\bneuroptlcs\b/g, "neuroptics")
       .replace(/\bneuropticss\b/g, "neuroptics")
       .replace(/\brecelver\b/g, "receiver")
-      .replace(/\brecelver\b/g, "receiver")
       .replace(/\bchassls\b/g, "chassis")
       .replace(/\bprlme\b/g, "prime")
-      .replace(/\bashenme\b/g, "ash prime")
+      .replace(/\bpnme\b/g, "prime")
+      .replace(/\bpor\b/g, "prime")
+      .replace(/\basherime\b/g, "ash prime")
       .replace(/\bcarrier prlme\b/g, "carrier prime")
       .replace(/\bsaryn prlme\b/g, "saryn prime")
       .replace(/\bnova prlme\b/g, "nova prime")
@@ -118,8 +119,6 @@
 
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-
-      // slightly softer thresholding than before
       const boosted =
         gray > 180 ? 255 :
         gray < 70 ? 0 :
@@ -160,7 +159,6 @@
     const w = baseCanvas.width;
     const h = baseCanvas.height;
 
-    // tuned for Warframe reward screen
     const x = w * 0.17;
     const y = h * 0.22;
     const cw = w * 0.67;
@@ -178,16 +176,14 @@
     for (let i = 0; i < 4; i++) {
       const x = i * colW;
 
-      // full column
       const fullCol = cropCanvas(rewardBandCanvas, x, 0, colW, fullH);
 
-      // lower text zone in each reward card
       const textZone = cropCanvas(
         rewardBandCanvas,
         x,
-        fullH * 0.46,
+        fullH * 0.44,
         colW,
-        fullH * 0.34
+        fullH * 0.36
       );
 
       cols.push({ fullCol, textZone });
@@ -204,7 +200,6 @@
     const result = await window.Tesseract.recognize(canvas, "eng", {
       logger: (m) => {
         if (!onStatus) return;
-
         if (m.status === "recognizing text") {
           const pct = Math.round((m.progress || 0) * 100);
           onStatus(`Running OCR ${label}… ${pct}%`);
@@ -220,21 +215,11 @@
   function isJunkLine(line) {
     const s = normalizeText(line);
     if (!s) return true;
-    if (s.length < 3) return true;
+    if (s.length < 2) return true;
 
     if (
       /void fissure|rewards|endless bonus|relics opened|reactant|bonus/.test(s) ||
-      /\b\d+%/.test(s) ||
-      /\b\d+\b/.test(s) && s.length < 6
-    ) {
-      return true;
-    }
-
-    // likely player names / garbage
-    if (
-      !/prime|blueprint|systems|system|neuroptics|chassis|cerebrum|receiver|barrel|stock|handle|harness|blade|gauntlet|wings|carapace|pt|bp/.test(s) &&
-      s.split(" ").length <= 2 &&
-      s.length < 16
+      /\b\d+%/.test(s)
     ) {
       return true;
     }
@@ -265,9 +250,7 @@
       out.push(clean);
     };
 
-    for (const line of lines) {
-      push(line);
-    }
+    for (const line of lines) push(line);
 
     for (let i = 0; i < lines.length; i++) {
       push(lines.slice(i, i + 2).join(" "));
@@ -275,11 +258,23 @@
       push(lines.slice(i, i + 4).join(" "));
     }
 
-    if (lines.length) {
-      push(lines.join(" "));
+    if (lines.length) push(lines.join(" "));
+    return out;
+  }
+
+  function extractPrimeChunks(rawText) {
+    const clean = normalizeText(rawText);
+    if (!clean) return [];
+
+    const chunks = [];
+    const re = /([a-z0-9]+\s+prime(?:\s+[a-z0-9]+){0,4})/g;
+    let m;
+
+    while ((m = re.exec(clean)) !== null) {
+      chunks.push(m[1].trim());
     }
 
-    return out;
+    return [...new Set(chunks)];
   }
 
   function bestMatchForColumn(candidates, knownItems, usedNames, prices) {
@@ -312,6 +307,51 @@
     };
   }
 
+  function getFallbackMatches(globalCandidates, globalPrimeChunks, knownItems, usedNames, prices, maxNeeded) {
+    const fallback = [];
+
+    for (const item of knownItems) {
+      if (usedNames.has(item.name)) continue;
+
+      let bestScore = 0;
+      let bestSource = "";
+
+      for (const c of globalCandidates) {
+        const score = stringScore(c, item.norm);
+        if (score > bestScore) {
+          bestScore = score;
+          bestSource = c;
+        }
+      }
+
+      for (const chunk of globalPrimeChunks) {
+        const score = stringScore(chunk, item.norm);
+        if (score > bestScore) {
+          bestScore = score;
+          bestSource = chunk;
+        }
+      }
+
+      // fallback needs to be looser, but still not garbage
+      if (bestScore >= 0.43) {
+        fallback.push({
+          ocrText: bestSource,
+          itemName: item.name,
+          confidence: bestScore,
+          price: typeof prices[item.name] === "number" ? prices[item.name] : null
+        });
+      }
+    }
+
+    fallback.sort((a, b) =>
+      b.confidence - a.confidence ||
+      (b.price ?? -1) - (a.price ?? -1) ||
+      a.itemName.localeCompare(b.itemName)
+    );
+
+    return fallback.slice(0, maxNeeded);
+  }
+
   function renderResults(container, rows) {
     container.innerHTML = "";
 
@@ -322,6 +362,8 @@
     }
 
     for (const row of rows) {
+      const medalHtml = row.medal ? `<div class="scannerMedal">${row.medal}</div>` : `<div class="scannerMedal"></div>`;
+
       const div = document.createElement("div");
       div.className = "scannerRow";
       div.innerHTML = `
@@ -330,7 +372,7 @@
           <div class="scannerMeta">OCR: ${escapeHtml(row.ocrText)} • Match ${(row.confidence * 100).toFixed(0)}%</div>
         </div>
         <div class="scannerRight">
-          <div class="scannerMedal">${row.medal}</div>
+          ${medalHtml}
           <div class="scannerPlat">${typeof row.price === "number" ? `${row.price}p` : "?"}</div>
         </div>
       `;
@@ -404,9 +446,24 @@
       const rewardBand = getRewardBandCanvas(baseCanvas);
       const columns = getColumnCanvases(rewardBand);
 
+      // whole reward band OCR
+      const rewardBandText = await runOCR(rewardBand, setStatus, "(reward band)");
+      const rewardBandLines = cleanLines(rewardBandText);
+      const rewardBandCandidates = buildCandidatesFromLines(rewardBandLines);
+      const rewardBandPrimeChunks = extractPrimeChunks(rewardBandText);
+
       const debugParts = [];
       const usedNames = new Set();
       const matchedRows = [];
+
+      debugParts.push(
+        `GLOBAL REWARD BAND OCR\n` +
+        `${rewardBandText.trim() || "(none)"}\n\n` +
+        `GLOBAL CLEAN LINES:\n${rewardBandLines.join("\n") || "(none)"}\n\n` +
+        `GLOBAL CANDIDATES:\n${rewardBandCandidates.join("\n") || "(none)"}\n\n` +
+        `GLOBAL PRIME CHUNKS:\n${rewardBandPrimeChunks.join("\n") || "(none)"}\n` +
+        `========================================`
+      );
 
       for (let i = 0; i < columns.length; i++) {
         const col = columns[i];
@@ -419,20 +476,46 @@
 
         const mergedLines = [...new Set([...textLines, ...fullLines])];
         const candidates = buildCandidatesFromLines(mergedLines);
-        const best = bestMatchForColumn(candidates, knownItems, usedNames, prices);
+
+        // include global candidates too for each column
+        const blendedCandidates = [...new Set([...candidates, ...rewardBandCandidates, ...rewardBandPrimeChunks])];
+
+        const best = bestMatchForColumn(blendedCandidates, knownItems, usedNames, prices);
 
         debugParts.push(
           `COLUMN ${i + 1}\n` +
           `FULL OCR:\n${fullText.trim() || "(none)"}\n\n` +
           `TEXT OCR:\n${textOnly.trim() || "(none)"}\n\n` +
           `CLEAN LINES:\n${mergedLines.join("\n") || "(none)"}\n\n` +
-          `CANDIDATES:\n${candidates.join("\n") || "(none)"}\n\n` +
+          `CANDIDATES:\n${blendedCandidates.join("\n") || "(none)"}\n\n` +
           `BEST MATCH:\n${best ? `${best.itemName} (${(best.confidence * 100).toFixed(0)}%)` : "(none)"}\n` +
           `----------------------------------------`
         );
 
-        if (best) {
-          matchedRows.push(best);
+        if (best) matchedRows.push(best);
+      }
+
+      // fallback: try to recover more items globally until we have 4
+      if (matchedRows.length < 4) {
+        const fallback = getFallbackMatches(
+          rewardBandCandidates,
+          rewardBandPrimeChunks,
+          knownItems,
+          usedNames,
+          prices,
+          4 - matchedRows.length
+        );
+
+        for (const row of fallback) {
+          matchedRows.push(row);
+          usedNames.add(row.itemName);
+        }
+
+        if (fallback.length) {
+          debugParts.push(
+            `FALLBACK MATCHES\n` +
+            fallback.map(f => `${f.itemName} (${(f.confidence * 100).toFixed(0)}%) from "${f.ocrText}"`).join("\n")
+          );
         }
       }
 
@@ -442,9 +525,9 @@
         a.itemName.localeCompare(b.itemName)
       );
 
-      const finalRows = matchedRows.map((row, i) => ({
+      const finalRows = matchedRows.slice(0, 4).map((row, i) => ({
         ...row,
-        medal: MEDALS[i] || `${i + 1}th`
+        medal: MEDALS[i] || ""
       }));
 
       renderResults(resultsEl, finalRows);
