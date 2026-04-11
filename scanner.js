@@ -25,6 +25,10 @@
       .replace(/\bwakong\b/g, "wukong")
       .replace(/\bmirag\b/g, "mirage")
       .replace(/\bdestreza prime h\b/g, "destreza prime handle")
+      .replace(/\bforma bluepnint\b/g, "forma blueprint")
+      .replace(/\blueprint\b/g, "blueprint")
+      .replace(/\bassis\b/g, "chassis")
+      .replace(/\bsytems\b/g, "systems")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -193,11 +197,10 @@
     const w = baseCanvas.width;
     const h = baseCanvas.height;
 
-    // tighter than before: mostly the actual reward cards
     const x = w * 0.18;
-    const y = h * 0.20;
-    const cw = w * 0.64;
-    const ch = h * 0.28;
+    const y = h * 0.18;
+    const cw = w * 0.66;
+    const ch = h * 0.30;
 
     return cropCanvas(baseCanvas, x, y, cw, ch);
   }
@@ -213,29 +216,23 @@
 
       const fullSlot = cropCanvas(rewardBandCanvas, x, 0, slotW, fullH);
 
-      // lower half text area
       const textBand = cropCanvas(
         rewardBandCanvas,
-        x + slotW * 0.06,
-        fullH * 0.50,
-        slotW * 0.88,
+        x + slotW * 0.05,
+        fullH * 0.47,
+        slotW * 0.90,
         fullH * 0.24
       );
 
-      // even tighter text strip near item labels
       const tightText = cropCanvas(
         rewardBandCanvas,
         x + slotW * 0.08,
-        fullH * 0.56,
+        fullH * 0.54,
         slotW * 0.84,
-        fullH * 0.18
+        fullH * 0.16
       );
 
-      slots.push({
-        fullSlot,
-        textBand,
-        tightText
-      });
+      slots.push({ fullSlot, textBand, tightText });
     }
 
     return slots;
@@ -360,7 +357,7 @@
           }
         }
 
-        if (bestScore >= 0.88) {
+        if (bestScore >= 0.86) {
           hits.push({ root: bestRoot, pos: i, len, score: bestScore });
         }
       }
@@ -403,7 +400,7 @@
           }
         }
 
-        if (bestScore >= 0.80) {
+        if (bestScore >= 0.78) {
           hits.push({
             component: bestComp,
             pos: i,
@@ -445,7 +442,7 @@
       }
     }
 
-    if (bestScore >= 0.80) {
+    if (bestScore >= 0.74) {
       return { root: bestRoot, score: bestScore, source: bestSource };
     }
     return null;
@@ -467,7 +464,7 @@
       }
     }
 
-    if (bestScore >= 0.76) {
+    if (bestScore >= 0.72) {
       return { component: bestComp, score: bestScore, source: bestSource };
     }
     return null;
@@ -498,6 +495,43 @@
     const items = rootMap.get(root);
     if (!component) return null;
     return items.find(i => i.component === component) || null;
+  }
+
+  function findItemsByLooseComponent(root, component, rootMap) {
+    if (!root || !rootMap.has(root) || !component) return [];
+    const normComp = normalizeText(component);
+    return rootMap.get(root).filter(i =>
+      i.component === normComp ||
+      i.component.includes(normComp) ||
+      normComp.includes(i.component)
+    );
+  }
+
+  function reconstructSlotChoice(slotRoot, slotComponent, localCandidates, rootMap) {
+    if (!slotRoot || !rootMap.has(slotRoot)) return null;
+
+    const items = rootMap.get(slotRoot);
+
+    const exact = exactItemFromRootAndComponent(slotRoot, slotComponent, rootMap);
+    if (exact) {
+      return { item: exact, confidence: 0.98, source: `${slotRoot} ${slotComponent}`.trim() };
+    }
+
+    const looseMatches = findItemsByLooseComponent(slotRoot, slotComponent, rootMap);
+    if (looseMatches.length === 1) {
+      return { item: looseMatches[0], confidence: 0.92, source: `${slotRoot} ${slotComponent}`.trim() };
+    }
+
+    const best = bestItemFromCandidates(localCandidates, items);
+    if (best && best.score >= 0.58) {
+      return { item: best.item, confidence: best.score, source: best.source };
+    }
+
+    if (!slotComponent && items.length === 1) {
+      return { item: items[0], confidence: 0.86, source: slotRoot };
+    }
+
+    return null;
   }
 
   function renderResults(container, rows) {
@@ -642,8 +676,16 @@
         const slot = slots[i];
 
         const fullText = await runOCR(slot.fullSlot, setStatus, `(slot ${i + 1}/4 full)`);
-        const textBandText = await runOCR(upscaleCanvas(thresholdCanvas(slot.textBand, 150, 90), 2), setStatus, `(slot ${i + 1}/4 text band)`);
-        const tightTextText = await runOCR(upscaleCanvas(thresholdCanvas(slot.tightText, 145, 85), 3), setStatus, `(slot ${i + 1}/4 tight text)`);
+        const textBandText = await runOCR(
+          upscaleCanvas(thresholdCanvas(slot.textBand, 150, 90), 2),
+          setStatus,
+          `(slot ${i + 1}/4 text band)`
+        );
+        const tightTextText = await runOCR(
+          upscaleCanvas(thresholdCanvas(slot.tightText, 145, 85), 3),
+          setStatus,
+          `(slot ${i + 1}/4 tight text)`
+        );
 
         const localLines = [
           ...new Set([
@@ -663,40 +705,20 @@
 
         let chosen = null;
 
-        const exact = exactItemFromRootAndComponent(slotRoot, slotComponent, rootMap);
-        if (exact && !usedNames.has(exact.name)) {
+        const reconstructed = reconstructSlotChoice(slotRoot, slotComponent, localCandidates, rootMap);
+        if (reconstructed && !usedNames.has(reconstructed.item.name)) {
           chosen = {
             slot: i,
-            ocrText: [slotRoot, slotComponent].filter(Boolean).join(" "),
-            itemName: exact.name,
-            confidence: 0.97,
-            price: typeof prices[exact.name] === "number" ? prices[exact.name] : null
+            ocrText: reconstructed.source || [slotRoot, slotComponent].filter(Boolean).join(" "),
+            itemName: reconstructed.item.name,
+            confidence: reconstructed.confidence,
+            price: typeof prices[reconstructed.item.name] === "number" ? prices[reconstructed.item.name] : null
           };
         }
 
-        if (!chosen && slotRoot && rootMap.has(slotRoot)) {
-          let candidateItems = rootMap.get(slotRoot).filter(x => !usedNames.has(x.name));
-
-          if (slotComponent) {
-            const narrowed = candidateItems.filter(x => x.component === slotComponent);
-            if (narrowed.length > 0) candidateItems = narrowed;
-          }
-
-          const best = bestItemFromCandidates(localCandidates, candidateItems);
-          if (best && best.score >= 0.46) {
-            chosen = {
-              slot: i,
-              ocrText: best.source || [slotRoot, slotComponent].filter(Boolean).join(" "),
-              itemName: best.item.name,
-              confidence: best.score,
-              price: typeof prices[best.item.name] === "number" ? prices[best.item.name] : null
-            };
-          }
-        }
-
-        if (!chosen && localRootHit && localRootHit.score >= 0.95 && rootMap.has(localRootHit.root)) {
-          const candidateItems = rootMap.get(localRootHit.root).filter(x => !usedNames.has(x.name));
-          const best = bestItemFromCandidates(localCandidates, candidateItems);
+        if (!chosen && localRootHit && localRootHit.score >= 0.92 && rootMap.has(localRootHit.root)) {
+          const items = rootMap.get(localRootHit.root).filter(x => !usedNames.has(x.name));
+          const best = bestItemFromCandidates(localCandidates, items);
           if (best && best.score >= 0.70) {
             chosen = {
               slot: i,
