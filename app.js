@@ -5,14 +5,16 @@ let PRICES = {};
 let RELIC_NAMES = [];
 let VAULT = null;
 
-// Save/restore scroll position for Items list
-let ITEM_LIST_SCROLL_TOP = 0;
-let REWARD_SCANNER = null;
-
 const state = { r1: null, r2: null, r3: null, r4: null };
 const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
+
+// Save/restore scroll position for Items list
+let ITEM_LIST_SCROLL_TOP = 0;
+
+// NEW: scanner instance
+let REWARD_SCANNER = null;
 
 function setStatus(msg) {
   const el = $("status");
@@ -30,7 +32,6 @@ function platForItem(itemName) {
   return (typeof v === "number") ? v : null;
 }
 
-// Rarity badge format: Rare (2%), Uncommon (11%), Common (25%)
 function rarityToLabel(r) {
   const val = Number(r);
   if (isNaN(val)) return "";
@@ -90,13 +91,11 @@ function escapeHtml(s) {
 function relicIsAvailable(relicName) {
   if (!VAULT || !relicName) return null;
 
-  // if file is { available: { "Lith K12": true, ... } }
   if (VAULT.available && typeof VAULT.available === "object") {
     const v = VAULT.available[relicName];
     if (typeof v === "boolean") return v;
   }
 
-  // fallback older formats
   const v = VAULT[relicName];
   if (typeof v === "boolean") return v;
   if (v && typeof v === "object") {
@@ -127,7 +126,6 @@ function formatRelicNameSpan(relicName) {
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
-// format "Lith A3, Lith D7" into colored spans
 function formatFromRelicsHtml(fromStr) {
   const s = String(fromStr ?? "").trim();
   if (!s) return "";
@@ -138,8 +136,8 @@ function formatFromRelicsHtml(fromStr) {
   return parts.map(p => formatRelicNameSpan(p)).join(", ");
 }
 
-// ---------------- Relic filter in MODAL (Relics list only) ----------------
-let RELIC_FILTER_MODE = "all"; // "all" | "available" | "vaulted"
+// ---------------- Relics filter ----------------
+let RELIC_FILTER_MODE = "all";
 
 function countVaultStates() {
   let available = 0, vaulted = 0, unknown = 0;
@@ -162,7 +160,6 @@ function setRelicFilterMode(mode) {
   const hint = $("vaultHint");
   if (hint) {
     const counts = countVaultStates();
-
     if (RELIC_FILTER_MODE === "available") {
       hint.textContent = `Showing unvaulted only (${counts.available})`;
     } else if (RELIC_FILTER_MODE === "vaulted") {
@@ -172,7 +169,9 @@ function setRelicFilterMode(mode) {
     }
   }
 
-  renderModalList($("modalSearch")?.value || "");
+  if (SEARCH_MODE === "relic") {
+    renderModalList($("modalSearch")?.value || "");
+  }
 }
 
 function relicPassesFilter(relicName) {
@@ -184,16 +183,9 @@ function relicPassesFilter(relicName) {
   return (RELIC_FILTER_MODE === "available") ? (avail === true) : (avail === false);
 }
 
-function setVaultFilterRowVisible(visible) {
-  const row = document.querySelector(".modalFilterRow");
-  if (!row) return;
-  row.style.display = visible ? "" : "none";
-}
-
 // ---------------- Item -> relic index ----------------
 let ITEM_TO_RELICS = null;
 
-// { keyLower: { displayName, plat, relics: [{ relicName, rarityLabel }] } }
 function buildItemIndex() {
   const map = new Map();
 
@@ -233,22 +225,110 @@ function buildItemIndex() {
   ITEM_TO_RELICS = map;
 }
 
-// ---------------- Modal picker + 2 buttons ----------------
+// NEW: scanner helpers
+function getKnownItemNames() {
+  if (!ITEM_TO_RELICS) return [];
+  return [...ITEM_TO_RELICS.values()]
+    .map(info => info.displayName)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function initRewardScanner() {
+  if (typeof window.createRewardScanner !== "function") return;
+
+  REWARD_SCANNER = window.createRewardScanner({
+    fileInputId: "scanFileInput",
+    uploadBtnId: "scanUploadBtn",
+    clearBtnId: "scanClearBtn",
+    statusId: "scanStatus",
+    previewWrapId: "scanPreviewWrap",
+    previewImgId: "scanPreview",
+    resultsId: "scanResults",
+    debugWrapId: "scanDebugWrap",
+    debugTextId: "scanDebugText"
+  });
+
+  REWARD_SCANNER.setData(getKnownItemNames(), PRICES);
+}
+
+// ---------------- Modal picker + modes ----------------
 let modalTarget = null;
-let SEARCH_MODE = "relic";  // "relic" or "items"
-let ITEM_DETAIL = null;     // {displayName, plat, relics:[...]} when drilling into an item
+let SEARCH_MODE = "relic";
+let ITEM_DETAIL = null;
+
+// Items mode controls
+let ITEM_TOP_MODE = false;
+let ITEM_FILTER_MODE = "all";
 
 function setButtonsActive() {
-  const bR = $("modeRelics");
-  const bI = $("modeItems");
-  if (!bR || !bI) return;
+  $("modeRelics")?.classList.toggle("active", SEARCH_MODE === "relic");
+  $("modeItems")?.classList.toggle("active", SEARCH_MODE === "items");
+}
 
-  if (SEARCH_MODE === "items") {
-    bR.classList.remove("active");
-    bI.classList.add("active");
+function showRelicControls() {
+  $("relicFilterRow")?.classList.remove("hidden");
+  $("itemFilterRow")?.classList.add("hidden");
+}
+
+function showItemControls() {
+  $("relicFilterRow")?.classList.add("hidden");
+  $("itemFilterRow")?.classList.remove("hidden");
+}
+
+function updateItemHint(totalMatches = null) {
+  const hint = $("itemHint");
+  if (!hint) return;
+
+  if (!ITEM_TOP_MODE) {
+    hint.textContent = "Type an item name to see which relics contain it.";
+    return;
+  }
+
+  const label =
+    ITEM_FILTER_MODE === "available" ? "Available only" :
+    ITEM_FILTER_MODE === "vaulted" ? "Vaulted only" :
+    "All items";
+
+  if (typeof totalMatches === "number") {
+    hint.textContent = `${label} • sorted by platinum highest to lowest • showing top ${Math.min(totalMatches, 500)}`;
   } else {
-    bI.classList.remove("active");
-    bR.classList.add("active");
+    hint.textContent = `${label} • sorted by platinum highest to lowest • showing top 500`;
+  }
+}
+
+function setItemTopMode(enabled) {
+  ITEM_TOP_MODE = !!enabled;
+
+  $("itemTopToggle")?.classList.toggle("active", ITEM_TOP_MODE);
+  $("itemSegWrap")?.classList.toggle("hidden", !ITEM_TOP_MODE);
+
+  if (!ITEM_TOP_MODE) {
+    setItemFilterMode("all", false);
+  }
+
+  ITEM_DETAIL = null;
+  ITEM_LIST_SCROLL_TOP = 0;
+
+  updateItemHint();
+  if (SEARCH_MODE === "items") {
+    renderModalList($("modalSearch")?.value || "");
+  }
+}
+
+function setItemFilterMode(mode, rerender = true) {
+  ITEM_FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
+
+  $("ifAll")?.classList.toggle("active", ITEM_FILTER_MODE === "all");
+  $("ifAvail")?.classList.toggle("active", ITEM_FILTER_MODE === "available");
+  $("ifVault")?.classList.toggle("active", ITEM_FILTER_MODE === "vaulted");
+
+  ITEM_DETAIL = null;
+  ITEM_LIST_SCROLL_TOP = 0;
+
+  updateItemHint();
+  if (rerender && SEARCH_MODE === "items") {
+    renderModalList($("modalSearch")?.value || "");
   }
 }
 
@@ -257,19 +337,26 @@ function setSearchMode(mode) {
   ITEM_DETAIL = null;
 
   setButtonsActive();
-  setVaultFilterRowVisible(SEARCH_MODE === "relic");
-
-  if (SEARCH_MODE === "items") setRelicFilterMode("all");
 
   const search = $("modalSearch");
   if (search) {
+    search.value = "";
     search.placeholder =
       (SEARCH_MODE === "items")
         ? "Search item: e.g. Wisp Prime Chassis Blueprint"
         : "Search: e.g. Meso C1 / Neo N16 / Axi S18";
   }
 
-  renderModalList($("modalSearch")?.value || "");
+  if (SEARCH_MODE === "items") {
+    showItemControls();
+    updateItemHint();
+  } else {
+    showRelicControls();
+    setRelicFilterMode("all");
+  }
+
+  ITEM_LIST_SCROLL_TOP = 0;
+  renderModalList("");
 }
 
 function openModal(targetKey) {
@@ -281,14 +368,20 @@ function openModal(targetKey) {
   const title = $("modalTitle");
   if (title) title.textContent = "Choose relic";
 
-  const search = $("modalSearch");
-  if (search) search.value = "";
+  ITEM_DETAIL = null;
+  ITEM_TOP_MODE = false;
+  ITEM_FILTER_MODE = "all";
+  ITEM_LIST_SCROLL_TOP = 0;
+
+  $("itemTopToggle")?.classList.remove("active");
+  $("itemSegWrap")?.classList.add("hidden");
+  $("ifAll")?.classList.add("active");
+  $("ifAvail")?.classList.remove("active");
+  $("ifVault")?.classList.remove("active");
 
   setSearchMode("relic");
-  setRelicFilterMode("all");
 
   modal.classList.remove("hidden");
-  setTimeout(() => search?.focus(), 60);
 }
 
 function closeModal() {
@@ -313,12 +406,37 @@ function pickRelic(relicName) {
   closeModal();
 }
 
+// ---------------- Items helpers ----------------
+function itemRelicsForFilter(info) {
+  const relics = Array.isArray(info?.relics) ? info.relics : [];
+  if (!ITEM_TOP_MODE || ITEM_FILTER_MODE === "all") return relics;
+
+  return relics.filter(e => {
+    const avail = relicIsAvailable(e.relicName);
+    if (avail === null) return false;
+    return ITEM_FILTER_MODE === "available" ? avail === true : avail === false;
+  });
+}
+
+function itemPassesTopFilter(info) {
+  if (!ITEM_TOP_MODE) return true;
+  return itemRelicsForFilter(info).length > 0;
+}
+
+function itemSortByPlatThenName(a, b) {
+  const ap = (typeof a.plat === "number") ? a.plat : -1;
+  const bp = (typeof b.plat === "number") ? b.plat : -1;
+  if (bp !== ap) return bp - ap;
+  return a.displayName.localeCompare(b.displayName);
+}
+
+// ---------------- Detail view ----------------
 function renderItemDetailView() {
   const listEl = $("modalList");
   if (!listEl || !ITEM_DETAIL) return;
 
-  ITEM_LIST_SCROLL_TOP = listEl.scrollTop || 0;
   listEl.innerHTML = "";
+  listEl.scrollTop = 0;
 
   const back = document.createElement("div");
   back.className = "modalItem";
@@ -328,8 +446,7 @@ function renderItemDetailView() {
   `;
   back.addEventListener("click", () => {
     ITEM_DETAIL = null;
-    renderModalList($("modalSearch")?.value || "");
-    requestAnimationFrame(() => { listEl.scrollTop = ITEM_LIST_SCROLL_TOP; });
+    renderModalList($("modalSearch")?.value || "", { restoreItemScroll: true });
   });
   listEl.appendChild(back);
 
@@ -344,7 +461,17 @@ function renderItemDetailView() {
   `;
   listEl.appendChild(header);
 
-  for (const e of (ITEM_DETAIL.relics || []).slice(0, 250)) {
+  const relicsToShow = itemRelicsForFilter(ITEM_DETAIL);
+
+  if (relicsToShow.length === 0) {
+    const row = document.createElement("div");
+    row.className = "modalItem";
+    row.innerHTML = `<strong>No relics in this filter</strong><span>Try All, Available, or Vaulted</span>`;
+    listEl.appendChild(row);
+    return;
+  }
+
+  for (const e of relicsToShow.slice(0, 250)) {
     const row = document.createElement("div");
     row.className = "modalItem";
     row.innerHTML = `
@@ -359,7 +486,8 @@ function renderItemDetailView() {
   }
 }
 
-function renderModalList(filter) {
+// ---------------- Main modal render ----------------
+function renderModalList(filter, options = {}) {
   const listEl = $("modalList");
   if (!listEl) return;
 
@@ -373,20 +501,82 @@ function renderModalList(filter) {
 
   // ITEMS MODE
   if (SEARCH_MODE === "items") {
+    if (!ITEM_TO_RELICS) buildItemIndex();
+
+    const allItems = [...ITEM_TO_RELICS.values()];
+
+    // TOP PLATINUM MODE
+    if (ITEM_TOP_MODE) {
+      let matches = allItems
+        .filter(info => itemPassesTopFilter(info))
+        .filter(info => !q || info.displayName.toLowerCase().includes(q));
+
+      matches.sort(itemSortByPlatThenName);
+
+      updateItemHint(matches.length);
+
+      if (matches.length === 0) {
+        const row = document.createElement("div");
+        row.className = "modalItem";
+        row.innerHTML = `<strong>No item match</strong><span>Try another search or change All / Available / Vaulted</span>`;
+        listEl.appendChild(row);
+        listEl.scrollTop = 0;
+        return;
+      }
+
+      for (const info of matches.slice(0, 500)) {
+        const previewRelics = itemRelicsForFilter(info);
+        const relicPreview = previewRelics
+          .slice(0, 10)
+          .map(e => formatRelicNameSpan(e.relicName))
+          .join(" • ");
+
+        const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
+
+        const row = document.createElement("div");
+        row.className = "modalItem";
+        row.innerHTML = `
+          <div class="modalRowTop">
+            <strong>${escapeHtml(info.displayName)}</strong>
+            <span class="modalPrice">${priceText}</span>
+          </div>
+          <div class="modalSub">${relicPreview || "No matching relics"}${previewRelics.length > 10 ? " …" : ""}</div>
+        `;
+        row.addEventListener("click", () => {
+          ITEM_LIST_SCROLL_TOP = listEl.scrollTop;
+          ITEM_DETAIL = info;
+          renderItemDetailView();
+        });
+        listEl.appendChild(row);
+      }
+
+      if (options.restoreItemScroll) {
+        requestAnimationFrame(() => {
+          listEl.scrollTop = ITEM_LIST_SCROLL_TOP;
+        });
+      } else {
+        listEl.scrollTop = 0;
+      }
+
+      return;
+    }
+
+    // NORMAL ITEMS SEARCH
+    updateItemHint();
+
     if (!q) {
       const row = document.createElement("div");
       row.className = "modalItem";
       row.innerHTML = `<strong>Type an item name</strong><span>Example: Wisp Prime Chassis Blueprint</span>`;
       listEl.appendChild(row);
+      listEl.scrollTop = 0;
       return;
     }
 
-    if (!ITEM_TO_RELICS) buildItemIndex();
-
     const matches = [];
-    for (const [key, info] of ITEM_TO_RELICS.entries()) {
-      if (key.includes(q)) matches.push(info);
-      if (matches.length >= 60) break;
+    for (const info of allItems) {
+      if (info.displayName.toLowerCase().includes(q)) matches.push(info);
+      if (matches.length >= 200) break;
     }
 
     if (matches.length === 0) {
@@ -394,15 +584,11 @@ function renderModalList(filter) {
       row.className = "modalItem";
       row.innerHTML = `<strong>No item match</strong><span>Try shorter (e.g. wisp neuroptics)</span>`;
       listEl.appendChild(row);
+      listEl.scrollTop = 0;
       return;
     }
 
-    matches.sort((a, b) => {
-      const ap = (typeof a.plat === "number") ? a.plat : -1;
-      const bp = (typeof b.plat === "number") ? b.plat : -1;
-      if (bp !== ap) return bp - ap;
-      return a.displayName.localeCompare(b.displayName);
-    });
+    matches.sort(itemSortByPlatThenName);
 
     for (const info of matches.slice(0, 20)) {
       const relicPreview = info.relics
@@ -422,11 +608,19 @@ function renderModalList(filter) {
         <div class="modalSub">${relicPreview}${info.relics.length > 10 ? " …" : ""}</div>
       `;
       row.addEventListener("click", () => {
-        ITEM_LIST_SCROLL_TOP = listEl.scrollTop || 0;
+        ITEM_LIST_SCROLL_TOP = listEl.scrollTop;
         ITEM_DETAIL = info;
         renderItemDetailView();
       });
       listEl.appendChild(row);
+    }
+
+    if (options.restoreItemScroll) {
+      requestAnimationFrame(() => {
+        listEl.scrollTop = ITEM_LIST_SCROLL_TOP;
+      });
+    } else {
+      listEl.scrollTop = 0;
     }
 
     return;
@@ -454,6 +648,8 @@ function renderModalList(filter) {
     row.addEventListener("click", () => pickRelic(name));
     listEl.appendChild(row);
   }
+
+  listEl.scrollTop = 0;
 }
 
 // ---------------- Rewards render ----------------
@@ -546,32 +742,6 @@ function showRewards() {
   setStatus(`Showing ${rewards.length} unique rewards • priced: ${priced}`);
 }
 
-function getKnownItemNames() {
-  if (!ITEM_TO_RELICS) return [];
-  return [...ITEM_TO_RELICS.values()]
-    .map(info => info.displayName)
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
-}
-
-function initRewardScanner() {
-  if (typeof window.createRewardScanner !== "function") return;
-
-  REWARD_SCANNER = window.createRewardScanner({
-    fileInputId: "scanFileInput",
-    uploadBtnId: "scanUploadBtn",
-    clearBtnId: "scanClearBtn",
-    statusId: "scanStatus",
-    previewWrapId: "scanPreviewWrap",
-    previewImgId: "scanPreview",
-    resultsId: "scanResults",
-    debugWrapId: "scanDebugWrap",
-    debugTextId: "scanDebugText"
-  });
-
-  REWARD_SCANNER.setData(getKnownItemNames(), PRICES);
-}
-
 // ---------------- Boot ----------------
 async function boot() {
   setStatus("Loading…");
@@ -606,6 +776,7 @@ async function boot() {
   $("modalSearch")?.addEventListener("input", (e) => {
     const val = e.target.value;
     if (SEARCH_MODE === "items" && ITEM_DETAIL) ITEM_DETAIL = null;
+    ITEM_LIST_SCROLL_TOP = 0;
     renderModalList(val);
   });
 
@@ -615,6 +786,11 @@ async function boot() {
   $("rfAll")?.addEventListener("click", () => setRelicFilterMode("all"));
   $("rfAvail")?.addEventListener("click", () => setRelicFilterMode("available"));
   $("rfVault")?.addEventListener("click", () => setRelicFilterMode("vaulted"));
+
+  $("itemTopToggle")?.addEventListener("click", () => setItemTopMode(!ITEM_TOP_MODE));
+  $("ifAll")?.addEventListener("click", () => setItemFilterMode("all"));
+  $("ifAvail")?.addEventListener("click", () => setItemFilterMode("available"));
+  $("ifVault")?.addEventListener("click", () => setItemFilterMode("vaulted"));
 
   document.querySelectorAll(".pickerBtn").forEach(btn => {
     btn.addEventListener("click", () => openModal(btn.dataset.target));
@@ -633,11 +809,12 @@ async function boot() {
       }
     });
 
-    $("cards") && ($("cards").innerHTML = "");
+    if ($("cards")) $("cards").innerHTML = "";
     setStatus("Cleared");
   });
 
-  setVaultFilterRowVisible(true);
+  showRelicControls();
+  updateItemHint();
 
   setStatus("Ready");
 }
