@@ -5,6 +5,7 @@
     return String(text || "")
       .toLowerCase()
       .replace(/[’'`´]/g, "")
+      .replace(/([a-z])prime\b/g, "$1 prime")
       .replace(/[^a-z0-9+\s]/g, " ")
       .replace(/\bblueprlnt\b/g, "blueprint")
       .replace(/\bblueprints\b/g, "blueprint")
@@ -18,9 +19,9 @@
       .replace(/\bpnme\b/g, "prime")
       .replace(/\bpor\b/g, "prime")
       .replace(/\basherime\b/g, "ash prime")
-      .replace(/\bcarrier prlme\b/g, "carrier prime")
-      .replace(/\bsaryn prlme\b/g, "saryn prime")
-      .replace(/\bnova prlme\b/g, "nova prime")
+      .replace(/\bsaynprime\b/g, "saryn prime")
+      .replace(/\bnovaprime\b/g, "nova prime")
+      .replace(/\bcarrierprime\b/g, "carrier prime")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -83,7 +84,7 @@
     const lev = 1 - (levenshtein(ai, bi) / Math.max(ai.length, bi.length, 1));
     const containsBoost = (bi.includes(ai) || ai.includes(bi)) ? 0.08 : 0;
 
-    return Math.max(0, Math.min(1, overlap * 0.58 + lev * 0.42 + containsBoost));
+    return Math.max(0, Math.min(1, overlap * 0.60 + lev * 0.40 + containsBoost));
   }
 
   function fileToImage(file) {
@@ -262,53 +263,161 @@
     return out;
   }
 
-  function extractPrimeChunks(rawText) {
-    const clean = normalizeText(rawText);
-    if (!clean) return [];
-
-    const chunks = [];
-    const re = /([a-z0-9]+\s+prime(?:\s+[a-z0-9]+){0,4})/g;
-    let m;
-
-    while ((m = re.exec(clean)) !== null) {
-      chunks.push(m[1].trim());
+  function getRootAndComponent(name) {
+    const norm = normalizeText(name);
+    const m = norm.match(/^(.+?\bprime)\s*(.*)$/);
+    if (!m) {
+      return { root: norm, component: "" };
     }
-
-    return [...new Set(chunks)];
+    return {
+      root: m[1].trim(),
+      component: (m[2] || "").trim()
+    };
   }
 
-  function bestMatchForColumn(candidates, knownItems, usedNames, prices) {
-    let best = null;
-    let bestScore = 0;
-    let bestCandidate = "";
+  function extractOrderedRoots(globalTexts, uniqueRoots) {
+    const combined = normalizeText(globalTexts.join(" "));
+    const words = combined.split(" ").filter(Boolean);
 
-    for (const candidate of candidates) {
-      for (const item of knownItems) {
-        if (usedNames.has(item.name)) continue;
+    const results = [];
 
-        const score = stringScore(candidate, item.norm);
-        if (score > bestScore) {
-          bestScore = score;
-          best = item;
-          bestCandidate = candidate;
+    for (const root of uniqueRoots) {
+      let bestScore = 0;
+      let bestPos = Infinity;
+
+      for (let i = 0; i < words.length; i++) {
+        for (let len = 1; len <= 4; len++) {
+          const gram = words.slice(i, i + len).join(" ");
+          if (!gram) continue;
+
+          const score = stringScore(gram, root);
+          if (score > bestScore) {
+            bestScore = score;
+            bestPos = i;
+          }
         }
+      }
+
+      if (bestScore >= 0.60) {
+        results.push({ root, score: bestScore, pos: bestPos });
       }
     }
 
-    if (!best || bestScore < 0.50) return null;
+    results.sort((a, b) => a.pos - b.pos || b.score - a.score);
+
+    const out = [];
+    const seen = new Set();
+    for (const r of results) {
+      if (seen.has(r.root)) continue;
+      seen.add(r.root);
+      out.push(r.root);
+    }
+
+    return out.slice(0, 4);
+  }
+
+  function extractOrderedComponents(globalTexts, uniqueComponents) {
+    const combined = normalizeText(globalTexts.join(" "));
+    const words = combined.split(" ").filter(Boolean);
+
+    const results = [];
+
+    for (const component of uniqueComponents) {
+      if (!component) continue;
+
+      let bestScore = 0;
+      let bestPos = Infinity;
+
+      for (let i = 0; i < words.length; i++) {
+        for (let len = 1; len <= 4; len++) {
+          const gram = words.slice(i, i + len).join(" ");
+          if (!gram) continue;
+
+          const score = stringScore(gram, component);
+          if (score > bestScore) {
+            bestScore = score;
+            bestPos = i;
+          }
+        }
+      }
+
+      if (bestScore >= 0.64) {
+        results.push({ component, score: bestScore, pos: bestPos });
+      }
+    }
+
+    results.sort((a, b) => a.pos - b.pos || b.score - a.score);
+
+    const out = [];
+    const seen = new Set();
+    for (const r of results) {
+      if (seen.has(r.component)) continue;
+      seen.add(r.component);
+      out.push(r.component);
+    }
+
+    return out.slice(0, 4);
+  }
+
+  function scoreItemForSlot(item, localCandidates, slotRoot, slotComponent) {
+    let localBest = 0;
+    let localSource = "";
+
+    for (const c of localCandidates) {
+      const score = stringScore(c, item.norm);
+      if (score > localBest) {
+        localBest = score;
+        localSource = c;
+      }
+    }
+
+    let score = localBest * 0.70;
+
+    if (slotRoot && item.root === slotRoot) score += 0.22;
+    if (slotComponent && item.component === slotComponent) score += 0.18;
+
+    return {
+      score: Math.min(1, score),
+      source: localSource || [slotRoot, slotComponent].filter(Boolean).join(" ")
+    };
+  }
+
+  function bestMatchForSlot(slotIndex, localCandidates, knownItems, usedNames, slotRoot, slotComponent, prices) {
+    let best = null;
+    let bestScore = 0;
+    let bestSource = "";
+
+    for (const item of knownItems) {
+      if (usedNames.has(item.name)) continue;
+
+      if (slotRoot && item.root !== slotRoot) continue;
+      if (slotComponent && item.component && item.component !== slotComponent && localCandidates.length) {
+        // keep flexibility, do not hard-block if OCR is weak
+      }
+
+      const scored = scoreItemForSlot(item, localCandidates, slotRoot, slotComponent);
+      if (scored.score > bestScore) {
+        bestScore = scored.score;
+        best = item;
+        bestSource = scored.source;
+      }
+    }
+
+    if (!best || bestScore < 0.46) return null;
 
     usedNames.add(best.name);
 
     return {
-      ocrText: bestCandidate,
+      slot: slotIndex,
+      ocrText: bestSource || [slotRoot, slotComponent].filter(Boolean).join(" "),
       itemName: best.name,
       confidence: bestScore,
       price: typeof prices[best.name] === "number" ? prices[best.name] : null
     };
   }
 
-  function getFallbackMatches(globalCandidates, globalPrimeChunks, knownItems, usedNames, prices, maxNeeded) {
-    const fallback = [];
+  function fallbackRemaining(globalCandidates, knownItems, usedNames, prices, maxNeeded) {
+    const out = [];
 
     for (const item of knownItems) {
       if (usedNames.has(item.name)) continue;
@@ -317,24 +426,15 @@
       let bestSource = "";
 
       for (const c of globalCandidates) {
-        const score = stringScore(c, item.norm);
-        if (score > bestScore) {
-          bestScore = score;
+        const s = stringScore(c, item.norm);
+        if (s > bestScore) {
+          bestScore = s;
           bestSource = c;
         }
       }
 
-      for (const chunk of globalPrimeChunks) {
-        const score = stringScore(chunk, item.norm);
-        if (score > bestScore) {
-          bestScore = score;
-          bestSource = chunk;
-        }
-      }
-
-      // fallback needs to be looser, but still not garbage
-      if (bestScore >= 0.43) {
-        fallback.push({
+      if (bestScore >= 0.52) {
+        out.push({
           ocrText: bestSource,
           itemName: item.name,
           confidence: bestScore,
@@ -343,13 +443,13 @@
       }
     }
 
-    fallback.sort((a, b) =>
+    out.sort((a, b) =>
       b.confidence - a.confidence ||
       (b.price ?? -1) - (a.price ?? -1) ||
       a.itemName.localeCompare(b.itemName)
     );
 
-    return fallback.slice(0, maxNeeded);
+    return out.slice(0, maxNeeded);
   }
 
   function renderResults(container, rows) {
@@ -392,6 +492,8 @@
     const resultsEl = document.getElementById(options.resultsId);
     const debugWrap = document.getElementById(options.debugWrapId);
     const debugText = document.getElementById(options.debugTextId);
+    const debugActions = document.getElementById(options.debugActionsId);
+    const copyDebugBtn = document.getElementById(options.copyDebugBtnId);
 
     let knownItems = [];
     let prices = {};
@@ -401,13 +503,30 @@
     }
 
     function setData(itemNames, priceMap) {
-      knownItems = [...new Set((itemNames || []).filter(Boolean))]
-        .map(name => ({
-          name,
-          norm: normalizeText(name)
-        }));
-
       prices = priceMap || {};
+
+      knownItems = [...new Set((itemNames || []).filter(Boolean))]
+        .map(name => {
+          const parsed = getRootAndComponent(name);
+          return {
+            name,
+            norm: normalizeText(name),
+            root: parsed.root,
+            component: parsed.component
+          };
+        });
+    }
+
+    async function copyDebug() {
+      const text = debugText?.textContent || "";
+      if (!text.trim()) return;
+
+      try {
+        await navigator.clipboard.writeText(text);
+        setStatus("OCR debug copied");
+      } catch {
+        setStatus("Could not copy OCR debug");
+      }
     }
 
     function clear() {
@@ -423,6 +542,7 @@
 
       if (debugText) debugText.textContent = "";
       debugWrap?.classList.add("hidden");
+      debugActions?.classList.add("hidden");
 
       setStatus("Ready to scan");
     }
@@ -446,22 +566,29 @@
       const rewardBand = getRewardBandCanvas(baseCanvas);
       const columns = getColumnCanvases(rewardBand);
 
-      // whole reward band OCR
+      const wholeText = await runOCR(baseCanvas, setStatus, "(whole image)");
       const rewardBandText = await runOCR(rewardBand, setStatus, "(reward band)");
-      const rewardBandLines = cleanLines(rewardBandText);
-      const rewardBandCandidates = buildCandidatesFromLines(rewardBandLines);
-      const rewardBandPrimeChunks = extractPrimeChunks(rewardBandText);
 
-      const debugParts = [];
+      const globalTexts = [wholeText, rewardBandText];
+
+      const uniqueRoots = [...new Set(knownItems.map(i => i.root).filter(Boolean))];
+      const uniqueComponents = [...new Set(knownItems.map(i => i.component).filter(Boolean))];
+
+      const orderedRoots = extractOrderedRoots(globalTexts, uniqueRoots);
+      const orderedComponents = extractOrderedComponents(globalTexts, uniqueComponents);
+
+      const globalLines = [...cleanLines(wholeText), ...cleanLines(rewardBandText)];
+      const globalCandidates = buildCandidatesFromLines([...new Set(globalLines)]);
+
       const usedNames = new Set();
       const matchedRows = [];
+      const debugParts = [];
 
       debugParts.push(
-        `GLOBAL REWARD BAND OCR\n` +
-        `${rewardBandText.trim() || "(none)"}\n\n` +
-        `GLOBAL CLEAN LINES:\n${rewardBandLines.join("\n") || "(none)"}\n\n` +
-        `GLOBAL CANDIDATES:\n${rewardBandCandidates.join("\n") || "(none)"}\n\n` +
-        `GLOBAL PRIME CHUNKS:\n${rewardBandPrimeChunks.join("\n") || "(none)"}\n` +
+        `WHOLE IMAGE OCR\n${wholeText.trim() || "(none)"}\n\n` +
+        `REWARD BAND OCR\n${rewardBandText.trim() || "(none)"}\n\n` +
+        `ORDERED ROOTS:\n${orderedRoots.join("\n") || "(none)"}\n\n` +
+        `ORDERED COMPONENTS:\n${orderedComponents.join("\n") || "(none)"}\n\n` +
         `========================================`
       );
 
@@ -471,23 +598,29 @@
         const fullText = await runOCR(col.fullCol, setStatus, `(column ${i + 1}/4 full)`);
         const textOnly = await runOCR(col.textZone, setStatus, `(column ${i + 1}/4 text)`);
 
-        const fullLines = cleanLines(fullText);
-        const textLines = cleanLines(textOnly);
+        const localLines = [...new Set([...cleanLines(fullText), ...cleanLines(textOnly)])];
+        const localCandidates = buildCandidatesFromLines(localLines);
 
-        const mergedLines = [...new Set([...textLines, ...fullLines])];
-        const candidates = buildCandidatesFromLines(mergedLines);
+        const slotRoot = orderedRoots[i] || "";
+        const slotComponent = orderedComponents[i] || "";
 
-        // include global candidates too for each column
-        const blendedCandidates = [...new Set([...candidates, ...rewardBandCandidates, ...rewardBandPrimeChunks])];
-
-        const best = bestMatchForColumn(blendedCandidates, knownItems, usedNames, prices);
+        const best = bestMatchForSlot(
+          i,
+          localCandidates,
+          knownItems,
+          usedNames,
+          slotRoot,
+          slotComponent,
+          prices
+        );
 
         debugParts.push(
           `COLUMN ${i + 1}\n` +
           `FULL OCR:\n${fullText.trim() || "(none)"}\n\n` +
           `TEXT OCR:\n${textOnly.trim() || "(none)"}\n\n` +
-          `CLEAN LINES:\n${mergedLines.join("\n") || "(none)"}\n\n` +
-          `CANDIDATES:\n${blendedCandidates.join("\n") || "(none)"}\n\n` +
+          `LOCAL CANDIDATES:\n${localCandidates.join("\n") || "(none)"}\n\n` +
+          `SLOT ROOT: ${slotRoot || "(none)"}\n` +
+          `SLOT COMPONENT: ${slotComponent || "(none)"}\n\n` +
           `BEST MATCH:\n${best ? `${best.itemName} (${(best.confidence * 100).toFixed(0)}%)` : "(none)"}\n` +
           `----------------------------------------`
         );
@@ -495,11 +628,9 @@
         if (best) matchedRows.push(best);
       }
 
-      // fallback: try to recover more items globally until we have 4
       if (matchedRows.length < 4) {
-        const fallback = getFallbackMatches(
-          rewardBandCandidates,
-          rewardBandPrimeChunks,
+        const fallback = fallbackRemaining(
+          globalCandidates,
           knownItems,
           usedNames,
           prices,
@@ -507,8 +638,8 @@
         );
 
         for (const row of fallback) {
-          matchedRows.push(row);
           usedNames.add(row.itemName);
+          matchedRows.push(row);
         }
 
         if (fallback.length) {
@@ -536,12 +667,14 @@
         debugText.textContent = debugParts.join("\n\n");
       }
       debugWrap?.classList.remove("hidden");
+      debugActions?.classList.remove("hidden");
 
       setStatus(finalRows.length ? "Scan complete" : "Scan complete — no confident matches");
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
     clearBtn?.addEventListener("click", clear);
+    copyDebugBtn?.addEventListener("click", copyDebug);
 
     fileInput?.addEventListener("change", (e) => {
       const file = e.target.files && e.target.files[0];
