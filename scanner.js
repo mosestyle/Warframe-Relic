@@ -22,6 +22,9 @@
       .replace(/\bsaynprime\b/g, "saryn prime")
       .replace(/\bnovaprime\b/g, "nova prime")
       .replace(/\bcarrierprime\b/g, "carrier prime")
+      .replace(/\bwakong\b/g, "wukong")
+      .replace(/\bmirag\b/g, "mirage")
+      .replace(/\bdestreza prime h\b/g, "destreza prime handle")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -103,15 +106,18 @@
     });
   }
 
-  function prepareCanvas(img) {
+  function makeCanvas(w, h) {
     const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+    return canvas;
+  }
 
-    const maxW = 2200;
+  function prepareCanvas(img) {
+    const maxW = 2600;
     const scale = img.width > maxW ? (maxW / img.width) : 1;
-
-    canvas.width = Math.max(1, Math.round(img.width * scale));
-    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const canvas = makeCanvas(img.width * scale, img.height * scale);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
@@ -121,9 +127,9 @@
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
       const boosted =
-        gray > 180 ? 255 :
-        gray < 70 ? 0 :
-        Math.min(255, Math.max(0, gray * 1.15));
+        gray > 175 ? 255 :
+        gray < 60 ? 0 :
+        Math.min(255, Math.max(0, gray * 1.22));
 
       data[i] = boosted;
       data[i + 1] = boosted;
@@ -135,11 +141,8 @@
   }
 
   function cropCanvas(sourceCanvas, x, y, w, h) {
-    const canvas = document.createElement("canvas");
+    const canvas = makeCanvas(w, h);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-    canvas.width = Math.max(1, Math.round(w));
-    canvas.height = Math.max(1, Math.round(h));
 
     ctx.drawImage(
       sourceCanvas,
@@ -156,41 +159,86 @@
     return canvas;
   }
 
+  function upscaleCanvas(sourceCanvas, factor = 2) {
+    const canvas = makeCanvas(sourceCanvas.width * factor, sourceCanvas.height * factor);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
+
+  function thresholdCanvas(sourceCanvas, lightCut = 160, darkCut = 80) {
+    const canvas = makeCanvas(sourceCanvas.width, sourceCanvas.height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(sourceCanvas, 0, 0);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
+      let v = gray;
+      if (gray >= lightCut) v = 255;
+      else if (gray <= darkCut) v = 0;
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
   function getRewardBandCanvas(baseCanvas) {
     const w = baseCanvas.width;
     const h = baseCanvas.height;
 
-    const x = w * 0.17;
-    const y = h * 0.22;
-    const cw = w * 0.67;
-    const ch = h * 0.34;
+    // tighter than before: mostly the actual reward cards
+    const x = w * 0.18;
+    const y = h * 0.20;
+    const cw = w * 0.64;
+    const ch = h * 0.28;
 
     return cropCanvas(baseCanvas, x, y, cw, ch);
   }
 
-  function getColumnCanvases(rewardBandCanvas) {
-    const cols = [];
+  function getSlotCanvases(rewardBandCanvas) {
+    const slots = [];
     const fullW = rewardBandCanvas.width;
     const fullH = rewardBandCanvas.height;
-    const colW = fullW / 4;
+    const slotW = fullW / 4;
 
     for (let i = 0; i < 4; i++) {
-      const x = i * colW;
+      const x = i * slotW;
 
-      const fullCol = cropCanvas(rewardBandCanvas, x, 0, colW, fullH);
+      const fullSlot = cropCanvas(rewardBandCanvas, x, 0, slotW, fullH);
 
-      const textZone = cropCanvas(
+      // lower half text area
+      const textBand = cropCanvas(
         rewardBandCanvas,
-        x,
-        fullH * 0.44,
-        colW,
-        fullH * 0.36
+        x + slotW * 0.06,
+        fullH * 0.50,
+        slotW * 0.88,
+        fullH * 0.24
       );
 
-      cols.push({ fullCol, textZone });
+      // even tighter text strip near item labels
+      const tightText = cropCanvas(
+        rewardBandCanvas,
+        x + slotW * 0.08,
+        fullH * 0.56,
+        slotW * 0.84,
+        fullH * 0.18
+      );
+
+      slots.push({
+        fullSlot,
+        textBand,
+        tightText
+      });
     }
 
-    return cols;
+    return slots;
   }
 
   async function runOCR(canvas, onStatus, label) {
@@ -219,7 +267,7 @@
     if (s.length < 2) return true;
 
     if (
-      /void fissure|rewards|endless bonus|relics opened|reactant|bonus/.test(s) ||
+      /void fissure|rewards|endless bonus|relics opened|reactant|bonus|owned|squad|message|host/.test(s) ||
       /\b\d+%/.test(s)
     ) {
       return true;
@@ -366,22 +414,15 @@
       }
     }
 
-    // sort left-to-right, prefer longer phrases first at the same position
     hits.sort((a, b) => a.pos - b.pos || b.len - a.len || b.score - a.score);
 
     const out = [];
     let cursor = -1;
 
     for (const h of hits) {
-      // allow duplicate component names later in the sentence
       if (h.pos < cursor) continue;
-
       out.push(h.component);
-
-      // move forward by the full match length so:
-      // "systems blueprint" can be followed by a later standalone "blueprint"
       cursor = h.pos + h.len;
-
       if (out.length >= 4) break;
     }
 
@@ -426,7 +467,7 @@
       }
     }
 
-    if (bestScore >= 0.78) {
+    if (bestScore >= 0.76) {
       return { component: bestComp, score: bestScore, source: bestSource };
     }
     return null;
@@ -571,7 +612,7 @@
       setStatus("Preparing image…");
       const baseCanvas = prepareCanvas(img);
       const rewardBand = getRewardBandCanvas(baseCanvas);
-      const columns = getColumnCanvases(rewardBand);
+      const slots = getSlotCanvases(rewardBand);
 
       const wholeText = await runOCR(baseCanvas, setStatus, "(whole image)");
       const rewardBandText = await runOCR(rewardBand, setStatus, "(reward band)");
@@ -597,13 +638,21 @@
         `========================================`
       );
 
-      for (let i = 0; i < columns.length; i++) {
-        const col = columns[i];
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
 
-        const fullText = await runOCR(col.fullCol, setStatus, `(column ${i + 1}/4 full)`);
-        const textOnly = await runOCR(col.textZone, setStatus, `(column ${i + 1}/4 text)`);
+        const fullText = await runOCR(slot.fullSlot, setStatus, `(slot ${i + 1}/4 full)`);
+        const textBandText = await runOCR(upscaleCanvas(thresholdCanvas(slot.textBand, 150, 90), 2), setStatus, `(slot ${i + 1}/4 text band)`);
+        const tightTextText = await runOCR(upscaleCanvas(thresholdCanvas(slot.tightText, 145, 85), 3), setStatus, `(slot ${i + 1}/4 tight text)`);
 
-        const localLines = [...new Set([...cleanLines(fullText), ...cleanLines(textOnly)])];
+        const localLines = [
+          ...new Set([
+            ...cleanLines(fullText),
+            ...cleanLines(textBandText),
+            ...cleanLines(tightTextText)
+          ])
+        ];
+
         const localCandidates = buildCandidatesFromLines(localLines);
 
         const localRootHit = findLocalRoot(localCandidates, knownRoots);
@@ -665,9 +714,10 @@
         }
 
         debugParts.push(
-          `COLUMN ${i + 1}\n` +
+          `SLOT ${i + 1}\n` +
           `FULL OCR:\n${fullText.trim() || "(none)"}\n\n` +
-          `TEXT OCR:\n${textOnly.trim() || "(none)"}\n\n` +
+          `TEXT BAND OCR:\n${textBandText.trim() || "(none)"}\n\n` +
+          `TIGHT TEXT OCR:\n${tightTextText.trim() || "(none)"}\n\n` +
           `LOCAL CANDIDATES:\n${localCandidates.join("\n") || "(none)"}\n\n` +
           `LOCAL ROOT: ${localRootHit ? `${localRootHit.root} (${(localRootHit.score * 100).toFixed(0)}%)` : "(none)"}\n` +
           `LOCAL COMPONENT: ${localCompHit ? `${localCompHit.component} (${(localCompHit.score * 100).toFixed(0)}%)` : "(none)"}\n` +
