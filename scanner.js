@@ -7,13 +7,30 @@
       .replace(/[’'`´]/g, "")
       .replace(/[^a-z0-9+\s]/g, " ")
       .replace(/\bblueprlnt\b/g, "blueprint")
+      .replace(/\bblueprints\b/g, "blueprint")
       .replace(/\bsysterns\b/g, "systems")
+      .replace(/\bsystern\b/g, "system")
       .replace(/\bneuroptlcs\b/g, "neuroptics")
+      .replace(/\bneuropticss\b/g, "neuroptics")
+      .replace(/\brecelver\b/g, "receiver")
       .replace(/\brecelver\b/g, "receiver")
       .replace(/\bchassls\b/g, "chassis")
       .replace(/\bprlme\b/g, "prime")
+      .replace(/\bashenme\b/g, "ash prime")
+      .replace(/\bcarrier prlme\b/g, "carrier prime")
+      .replace(/\bsaryn prlme\b/g, "saryn prime")
+      .replace(/\bnova prlme\b/g, "nova prime")
       .replace(/\s+/g, " ")
       .trim();
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 
   function levenshtein(a, b) {
@@ -50,6 +67,7 @@
     for (const t of at) {
       if (bt.has(t)) shared++;
     }
+
     return shared / Math.max(at.size, bt.size);
   }
 
@@ -62,31 +80,9 @@
 
     const overlap = tokenOverlapScore(ai, bi);
     const lev = 1 - (levenshtein(ai, bi) / Math.max(ai.length, bi.length, 1));
-    const containsBoost = bi.includes(ai) || ai.includes(bi) ? 0.08 : 0;
+    const containsBoost = (bi.includes(ai) || ai.includes(bi)) ? 0.08 : 0;
 
-    return Math.max(0, Math.min(1, overlap * 0.55 + lev * 0.45 + containsBoost));
-  }
-
-  function extractCandidateLines(rawText) {
-    const lines = String(rawText || "")
-      .split(/\r?\n/)
-      .map(s => s.trim())
-      .filter(Boolean)
-      .filter(s => s.length >= 5)
-      .filter(s => /[a-z]/i.test(s))
-      .filter(s => !/void fissure|choose your reward|reactant|item reward/i.test(s));
-
-    const unique = [];
-    const seen = new Set();
-
-    for (const line of lines) {
-      const key = normalizeText(line);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      unique.push(line);
-    }
-
-    return unique;
+    return Math.max(0, Math.min(1, overlap * 0.58 + lev * 0.42 + containsBoost));
   }
 
   function fileToImage(file) {
@@ -122,7 +118,13 @@
 
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-      const boosted = gray > 165 ? 255 : gray < 90 ? 0 : gray;
+
+      // slightly softer thresholding than before
+      const boosted =
+        gray > 180 ? 255 :
+        gray < 70 ? 0 :
+        Math.min(255, Math.max(0, gray * 1.15));
+
       data[i] = boosted;
       data[i + 1] = boosted;
       data[i + 2] = boosted;
@@ -132,7 +134,69 @@
     return canvas;
   }
 
-  async function runOCR(canvas, onStatus) {
+  function cropCanvas(sourceCanvas, x, y, w, h) {
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    canvas.width = Math.max(1, Math.round(w));
+    canvas.height = Math.max(1, Math.round(h));
+
+    ctx.drawImage(
+      sourceCanvas,
+      Math.round(x),
+      Math.round(y),
+      Math.round(w),
+      Math.round(h),
+      0,
+      0,
+      canvas.width,
+      canvas.height
+    );
+
+    return canvas;
+  }
+
+  function getRewardBandCanvas(baseCanvas) {
+    const w = baseCanvas.width;
+    const h = baseCanvas.height;
+
+    // tuned for Warframe reward screen
+    const x = w * 0.17;
+    const y = h * 0.22;
+    const cw = w * 0.67;
+    const ch = h * 0.34;
+
+    return cropCanvas(baseCanvas, x, y, cw, ch);
+  }
+
+  function getColumnCanvases(rewardBandCanvas) {
+    const cols = [];
+    const fullW = rewardBandCanvas.width;
+    const fullH = rewardBandCanvas.height;
+    const colW = fullW / 4;
+
+    for (let i = 0; i < 4; i++) {
+      const x = i * colW;
+
+      // full column
+      const fullCol = cropCanvas(rewardBandCanvas, x, 0, colW, fullH);
+
+      // lower text zone in each reward card
+      const textZone = cropCanvas(
+        rewardBandCanvas,
+        x,
+        fullH * 0.46,
+        colW,
+        fullH * 0.34
+      );
+
+      cols.push({ fullCol, textZone });
+    }
+
+    return cols;
+  }
+
+  async function runOCR(canvas, onStatus, label) {
     if (!window.Tesseract) {
       throw new Error("Tesseract.js failed to load.");
     }
@@ -143,23 +207,137 @@
 
         if (m.status === "recognizing text") {
           const pct = Math.round((m.progress || 0) * 100);
-          onStatus(`Running OCR… ${pct}%`);
-        } else if (typeof m.status === "string") {
-          onStatus(`${m.status.charAt(0).toUpperCase()}${m.status.slice(1)}…`);
+          onStatus(`Running OCR ${label}… ${pct}%`);
         }
-      }
+      },
+      tessedit_pageseg_mode: 6,
+      preserve_interword_spaces: "1"
     });
 
     return result?.data?.text || "";
   }
 
-  function escapeHtml(s) {
-    return String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#39;");
+  function isJunkLine(line) {
+    const s = normalizeText(line);
+    if (!s) return true;
+    if (s.length < 3) return true;
+
+    if (
+      /void fissure|rewards|endless bonus|relics opened|reactant|bonus/.test(s) ||
+      /\b\d+%/.test(s) ||
+      /\b\d+\b/.test(s) && s.length < 6
+    ) {
+      return true;
+    }
+
+    // likely player names / garbage
+    if (
+      !/prime|blueprint|systems|system|neuroptics|chassis|cerebrum|receiver|barrel|stock|handle|harness|blade|gauntlet|wings|carapace|pt|bp/.test(s) &&
+      s.split(" ").length <= 2 &&
+      s.length < 16
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function cleanLines(rawText) {
+    return String(rawText || "")
+      .split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(Boolean)
+      .map(s => s.replace(/[|_[\]{}~<>]+/g, " ").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .filter(s => /[a-z]/i.test(s))
+      .filter(s => !isJunkLine(s));
+  }
+
+  function buildCandidatesFromLines(lines) {
+    const out = [];
+    const seen = new Set();
+
+    const push = (s) => {
+      const clean = s.replace(/\s+/g, " ").trim();
+      const key = normalizeText(clean);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(clean);
+    };
+
+    for (const line of lines) {
+      push(line);
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      push(lines.slice(i, i + 2).join(" "));
+      push(lines.slice(i, i + 3).join(" "));
+      push(lines.slice(i, i + 4).join(" "));
+    }
+
+    if (lines.length) {
+      push(lines.join(" "));
+    }
+
+    return out;
+  }
+
+  function bestMatchForColumn(candidates, knownItems, usedNames, prices) {
+    let best = null;
+    let bestScore = 0;
+    let bestCandidate = "";
+
+    for (const candidate of candidates) {
+      for (const item of knownItems) {
+        if (usedNames.has(item.name)) continue;
+
+        const score = stringScore(candidate, item.norm);
+        if (score > bestScore) {
+          bestScore = score;
+          best = item;
+          bestCandidate = candidate;
+        }
+      }
+    }
+
+    if (!best || bestScore < 0.50) return null;
+
+    usedNames.add(best.name);
+
+    return {
+      ocrText: bestCandidate,
+      itemName: best.name,
+      confidence: bestScore,
+      price: typeof prices[best.name] === "number" ? prices[best.name] : null
+    };
+  }
+
+  function renderResults(container, rows) {
+    container.innerHTML = "";
+
+    if (!rows.length) {
+      container.innerHTML = `<div class="scannerEmpty">No confident item matches yet. Try another reward screenshot.</div>`;
+      container.classList.remove("hidden");
+      return;
+    }
+
+    for (const row of rows) {
+      const div = document.createElement("div");
+      div.className = "scannerRow";
+      div.innerHTML = `
+        <div class="scannerLeft">
+          <div class="scannerName">${escapeHtml(row.itemName)}</div>
+          <div class="scannerMeta">OCR: ${escapeHtml(row.ocrText)} • Match ${(row.confidence * 100).toFixed(0)}%</div>
+        </div>
+        <div class="scannerRight">
+          <div class="scannerMedal">${row.medal}</div>
+          <div class="scannerPlat">${typeof row.price === "number" ? `${row.price}p` : "?"}</div>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    container.classList.remove("hidden");
   }
 
   window.createRewardScanner = function createRewardScanner(options) {
@@ -186,6 +364,7 @@
           name,
           norm: normalizeText(name)
         }));
+
       prices = priceMap || {};
     }
 
@@ -206,77 +385,6 @@
       setStatus("Ready to scan");
     }
 
-    function matchLinesToItems(lines) {
-      const used = new Set();
-      const results = [];
-
-      for (const line of lines) {
-        let best = null;
-        let bestScore = 0;
-
-        for (const item of knownItems) {
-          if (used.has(item.name)) continue;
-
-          const score = stringScore(line, item.norm);
-          if (score > bestScore) {
-            bestScore = score;
-            best = item;
-          }
-        }
-
-        if (best && bestScore >= 0.55) {
-          used.add(best.name);
-          results.push({
-            ocrText: line,
-            itemName: best.name,
-            confidence: bestScore,
-            price: typeof prices[best.name] === "number" ? prices[best.name] : null
-          });
-        }
-      }
-
-      results.sort((a, b) =>
-        (b.price ?? -1) - (a.price ?? -1) ||
-        b.confidence - a.confidence ||
-        a.itemName.localeCompare(b.itemName)
-      );
-
-      return results.slice(0, 4).map((row, i) => ({
-        ...row,
-        medal: MEDALS[i] || `${i + 1}th`
-      }));
-    }
-
-    function renderResults(rows) {
-      if (!resultsEl) return;
-
-      resultsEl.innerHTML = "";
-
-      if (!rows.length) {
-        resultsEl.innerHTML = `<div class="scannerEmpty">No confident item matches yet. Try a clearer screenshot of the reward screen.</div>`;
-        resultsEl.classList.remove("hidden");
-        return;
-      }
-
-      for (const row of rows) {
-        const div = document.createElement("div");
-        div.className = "scannerRow";
-        div.innerHTML = `
-          <div class="scannerLeft">
-            <div class="scannerName">${escapeHtml(row.itemName)}</div>
-            <div class="scannerMeta">OCR: ${escapeHtml(row.ocrText)} • Match ${(row.confidence * 100).toFixed(0)}%</div>
-          </div>
-          <div class="scannerRight">
-            <div class="scannerMedal">${row.medal}</div>
-            <div class="scannerPlat">${typeof row.price === "number" ? `${row.price}p` : "?"}</div>
-          </div>
-        `;
-        resultsEl.appendChild(div);
-      }
-
-      resultsEl.classList.remove("hidden");
-    }
-
     async function handleFile(file) {
       if (!file) return;
 
@@ -292,20 +400,61 @@
       previewWrap?.classList.remove("hidden");
 
       setStatus("Preparing image…");
-      const canvas = prepareCanvas(img);
+      const baseCanvas = prepareCanvas(img);
+      const rewardBand = getRewardBandCanvas(baseCanvas);
+      const columns = getColumnCanvases(rewardBand);
 
-      const rawText = await runOCR(canvas, setStatus);
-      const lines = extractCandidateLines(rawText);
-      const matches = matchLinesToItems(lines);
+      const debugParts = [];
+      const usedNames = new Set();
+      const matchedRows = [];
 
-      renderResults(matches);
+      for (let i = 0; i < columns.length; i++) {
+        const col = columns[i];
+
+        const fullText = await runOCR(col.fullCol, setStatus, `(column ${i + 1}/4 full)`);
+        const textOnly = await runOCR(col.textZone, setStatus, `(column ${i + 1}/4 text)`);
+
+        const fullLines = cleanLines(fullText);
+        const textLines = cleanLines(textOnly);
+
+        const mergedLines = [...new Set([...textLines, ...fullLines])];
+        const candidates = buildCandidatesFromLines(mergedLines);
+        const best = bestMatchForColumn(candidates, knownItems, usedNames, prices);
+
+        debugParts.push(
+          `COLUMN ${i + 1}\n` +
+          `FULL OCR:\n${fullText.trim() || "(none)"}\n\n` +
+          `TEXT OCR:\n${textOnly.trim() || "(none)"}\n\n` +
+          `CLEAN LINES:\n${mergedLines.join("\n") || "(none)"}\n\n` +
+          `CANDIDATES:\n${candidates.join("\n") || "(none)"}\n\n` +
+          `BEST MATCH:\n${best ? `${best.itemName} (${(best.confidence * 100).toFixed(0)}%)` : "(none)"}\n` +
+          `----------------------------------------`
+        );
+
+        if (best) {
+          matchedRows.push(best);
+        }
+      }
+
+      matchedRows.sort((a, b) =>
+        (b.price ?? -1) - (a.price ?? -1) ||
+        b.confidence - a.confidence ||
+        a.itemName.localeCompare(b.itemName)
+      );
+
+      const finalRows = matchedRows.map((row, i) => ({
+        ...row,
+        medal: MEDALS[i] || `${i + 1}th`
+      }));
+
+      renderResults(resultsEl, finalRows);
 
       if (debugText) {
-        debugText.textContent = rawText.trim() || "(No OCR text detected)";
+        debugText.textContent = debugParts.join("\n\n");
       }
       debugWrap?.classList.remove("hidden");
 
-      setStatus(matches.length ? "Scan complete" : "Scan complete — no confident matches");
+      setStatus(finalRows.length ? "Scan complete" : "Scan complete — no confident matches");
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
