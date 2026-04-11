@@ -284,7 +284,7 @@
     return map;
   }
 
-  function buildKnownComponentSet(knownItems) {
+  function buildKnownComponentList(knownItems) {
     return [...new Set(knownItems.map(i => i.component).filter(Boolean))];
   }
 
@@ -366,34 +366,21 @@
       }
     }
 
-    // Prefer longer phrases and stronger matches
+    // Sort left-to-right, prefer longer matches first at same start
     hits.sort((a, b) => a.pos - b.pos || b.len - a.len || b.score - a.score);
 
+    // Keep a sequential component stream, allowing duplicate text if they occur later
     const out = [];
-    const seen = new Set();
-    const usedWordPositions = new Set();
+    let cursor = -1;
 
     for (const h of hits) {
-      if (seen.has(h.component)) continue;
-
-      let overlaps = false;
-      for (let p = h.pos; p < h.pos + h.len; p++) {
-        if (usedWordPositions.has(p)) {
-          overlaps = true;
-          break;
-        }
-      }
-      if (overlaps) continue;
-
-      seen.add(h.component);
+      if (h.pos < cursor) continue;
       out.push(h.component);
-
-      for (let p = h.pos; p < h.pos + h.len; p++) {
-        usedWordPositions.add(p);
-      }
+      cursor = h.pos + h.len;
+      if (out.length >= 4) break;
     }
 
-    return out.slice(0, 4);
+    return out;
   }
 
   function findLocalRoot(localCandidates, knownRoots) {
@@ -588,7 +575,7 @@
 
       const rootMap = buildKnownRootMap(knownItems);
       const knownRoots = [...rootMap.keys()];
-      const knownComponents = buildKnownComponentSet(knownItems);
+      const knownComponents = buildKnownComponentList(knownItems);
 
       const orderedRoots = extractOrderedRootsFromOCR(globalTexts, knownRoots);
       const orderedComponents = extractOrderedComponentsFromOCR(globalTexts, knownComponents);
@@ -622,7 +609,6 @@
 
         let chosen = null;
 
-        // 1) Best case: exact root + component exists in known reward items
         const exact = exactItemFromRootAndComponent(slotRoot, slotComponent, rootMap);
         if (exact && !usedNames.has(exact.name)) {
           chosen = {
@@ -634,7 +620,6 @@
           };
         }
 
-        // 2) Otherwise, if we know root, only search within that root's actual reward items
         if (!chosen && slotRoot && rootMap.has(slotRoot)) {
           let candidateItems = rootMap.get(slotRoot).filter(x => !usedNames.has(x.name));
 
@@ -655,7 +640,6 @@
           }
         }
 
-        // 3) LAST fallback: only if local root is very strong and still unresolved
         if (!chosen && localRootHit && localRootHit.score >= 0.95 && rootMap.has(localRootHit.root)) {
           const candidateItems = rootMap.get(localRootHit.root).filter(x => !usedNames.has(x.name));
           const best = bestItemFromCandidates(localCandidates, candidateItems);
