@@ -13,7 +13,7 @@ const $ = (id) => document.getElementById(id);
 // Save/restore scroll position for Items list
 let ITEM_LIST_SCROLL_TOP = 0;
 
-// NEW: scanner instance
+// scanner instance
 let REWARD_SCANNER = null;
 
 function setStatus(msg) {
@@ -225,12 +225,15 @@ function buildItemIndex() {
   ITEM_TO_RELICS = map;
 }
 
-// NEW: scanner helpers
+// scanner helpers
 function getKnownItemNames() {
-  if (!ITEM_TO_RELICS) return [];
-  return [...ITEM_TO_RELICS.values()]
-    .map(info => info.displayName)
-    .filter(Boolean)
+  const relicItems = ITEM_TO_RELICS
+    ? [...ITEM_TO_RELICS.values()].map(info => info.displayName).filter(Boolean)
+    : [];
+
+  const priceItems = Object.keys(PRICES || {}).filter(Boolean);
+
+  return [...new Set([...relicItems, ...priceItems])]
     .sort((a, b) => a.localeCompare(b));
 }
 
@@ -246,7 +249,9 @@ function initRewardScanner() {
     previewImgId: "scanPreview",
     resultsId: "scanResults",
     debugWrapId: "scanDebugWrap",
-    debugTextId: "scanDebugText"
+    debugTextId: "scanDebugText",
+    debugActionsId: "scanDebugActions",
+    copyDebugBtnId: "scanCopyDebugBtn"
   });
 
   REWARD_SCANNER.setData(getKnownItemNames(), PRICES);
@@ -499,13 +504,11 @@ function renderModalList(filter, options = {}) {
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
-  // ITEMS MODE
   if (SEARCH_MODE === "items") {
     if (!ITEM_TO_RELICS) buildItemIndex();
 
     const allItems = [...ITEM_TO_RELICS.values()];
 
-    // TOP PLATINUM MODE
     if (ITEM_TOP_MODE) {
       let matches = allItems
         .filter(info => itemPassesTopFilter(info))
@@ -561,7 +564,6 @@ function renderModalList(filter, options = {}) {
       return;
     }
 
-    // NORMAL ITEMS SEARCH
     updateItemHint();
 
     if (!q) {
@@ -626,7 +628,6 @@ function renderModalList(filter, options = {}) {
     return;
   }
 
-  // RELICS MODE
   const base = q
     ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q))
     : RELIC_NAMES;
