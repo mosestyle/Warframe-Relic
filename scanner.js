@@ -313,20 +313,25 @@
         }
 
         if (bestScore >= 0.88) {
-          hits.push({ root: bestRoot, pos: i, score: bestScore });
+          hits.push({ root: bestRoot, pos: i, len, score: bestScore });
         }
       }
     }
 
-    hits.sort((a, b) => a.pos - b.pos || b.score - a.score);
+    hits.sort((a, b) => a.pos - b.pos || b.len - a.len || b.score - a.score);
 
     const out = [];
     const seen = new Set();
+    let lastPos = -999;
+
     for (const h of hits) {
       if (seen.has(h.root)) continue;
+      if (Math.abs(h.pos - lastPos) <= 1) continue;
       seen.add(h.root);
       out.push(h.root);
+      lastPos = h.pos;
     }
+
     return out.slice(0, 4);
   }
 
@@ -350,21 +355,44 @@
           }
         }
 
-        if (bestScore >= 0.86) {
-          hits.push({ component: bestComp, pos: i, score: bestScore });
+        if (bestScore >= 0.84) {
+          hits.push({
+            component: bestComp,
+            pos: i,
+            len,
+            score: bestScore
+          });
         }
       }
     }
 
-    hits.sort((a, b) => a.pos - b.pos || b.score - a.score);
+    // Prefer longer phrases and stronger matches
+    hits.sort((a, b) => a.pos - b.pos || b.len - a.len || b.score - a.score);
 
     const out = [];
     const seen = new Set();
+    const usedWordPositions = new Set();
+
     for (const h of hits) {
       if (seen.has(h.component)) continue;
+
+      let overlaps = false;
+      for (let p = h.pos; p < h.pos + h.len; p++) {
+        if (usedWordPositions.has(p)) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (overlaps) continue;
+
       seen.add(h.component);
       out.push(h.component);
+
+      for (let p = h.pos; p < h.pos + h.len; p++) {
+        usedWordPositions.add(p);
+      }
     }
+
     return out.slice(0, 4);
   }
 
@@ -430,6 +458,13 @@
 
     if (!best) return null;
     return { item: best, score: bestScore, source: bestSource };
+  }
+
+  function exactItemFromRootAndComponent(root, component, rootMap) {
+    if (!root || !rootMap.has(root)) return null;
+    const items = rootMap.get(root);
+    if (!component) return null;
+    return items.find(i => i.component === component) || null;
   }
 
   function renderResults(container, rows) {
@@ -585,31 +620,58 @@
         const slotRoot = localRootHit?.root || orderedRoots[i] || "";
         const slotComponent = localCompHit?.component || orderedComponents[i] || "";
 
-        let candidateItems = knownItems;
-
-        if (slotRoot && rootMap.has(slotRoot)) {
-          candidateItems = rootMap.get(slotRoot);
-        }
-
-        if (slotComponent) {
-          const narrowed = candidateItems.filter(i2 => i2.component === slotComponent);
-          if (narrowed.length > 0) candidateItems = narrowed;
-        }
-
-        candidateItems = candidateItems.filter(i2 => !usedNames.has(i2.name));
-
-        const best = bestItemFromCandidates(localCandidates, candidateItems);
-
         let chosen = null;
-        if (best && best.score >= 0.46) {
+
+        // 1) Best case: exact root + component exists in known reward items
+        const exact = exactItemFromRootAndComponent(slotRoot, slotComponent, rootMap);
+        if (exact && !usedNames.has(exact.name)) {
           chosen = {
             slot: i,
-            ocrText: best.source || [slotRoot, slotComponent].filter(Boolean).join(" "),
-            itemName: best.item.name,
-            confidence: best.score,
-            price: typeof prices[best.item.name] === "number" ? prices[best.item.name] : null
+            ocrText: [slotRoot, slotComponent].filter(Boolean).join(" "),
+            itemName: exact.name,
+            confidence: 0.97,
+            price: typeof prices[exact.name] === "number" ? prices[exact.name] : null
           };
-          usedNames.add(best.item.name);
+        }
+
+        // 2) Otherwise, if we know root, only search within that root's actual reward items
+        if (!chosen && slotRoot && rootMap.has(slotRoot)) {
+          let candidateItems = rootMap.get(slotRoot).filter(x => !usedNames.has(x.name));
+
+          if (slotComponent) {
+            const narrowed = candidateItems.filter(x => x.component === slotComponent);
+            if (narrowed.length > 0) candidateItems = narrowed;
+          }
+
+          const best = bestItemFromCandidates(localCandidates, candidateItems);
+          if (best && best.score >= 0.46) {
+            chosen = {
+              slot: i,
+              ocrText: best.source || [slotRoot, slotComponent].filter(Boolean).join(" "),
+              itemName: best.item.name,
+              confidence: best.score,
+              price: typeof prices[best.item.name] === "number" ? prices[best.item.name] : null
+            };
+          }
+        }
+
+        // 3) LAST fallback: only if local root is very strong and still unresolved
+        if (!chosen && localRootHit && localRootHit.score >= 0.95 && rootMap.has(localRootHit.root)) {
+          const candidateItems = rootMap.get(localRootHit.root).filter(x => !usedNames.has(x.name));
+          const best = bestItemFromCandidates(localCandidates, candidateItems);
+          if (best && best.score >= 0.70) {
+            chosen = {
+              slot: i,
+              ocrText: best.source || localRootHit.root,
+              itemName: best.item.name,
+              confidence: best.score,
+              price: typeof prices[best.item.name] === "number" ? prices[best.item.name] : null
+            };
+          }
+        }
+
+        if (chosen) {
+          usedNames.add(chosen.itemName);
           matchedRows.push(chosen);
         }
 
