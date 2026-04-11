@@ -355,7 +355,7 @@
           }
         }
 
-        if (bestScore >= 0.84) {
+        if (bestScore >= 0.80) {
           hits.push({
             component: bestComp,
             pos: i,
@@ -366,17 +366,22 @@
       }
     }
 
-    // Sort left-to-right, prefer longer matches first at same start
+    // sort left-to-right, prefer longer phrases first at the same position
     hits.sort((a, b) => a.pos - b.pos || b.len - a.len || b.score - a.score);
 
-    // Keep a sequential component stream, allowing duplicate text if they occur later
     const out = [];
     let cursor = -1;
 
     for (const h of hits) {
+      // allow duplicate component names later in the sentence
       if (h.pos < cursor) continue;
+
       out.push(h.component);
+
+      // move forward by the full match length so:
+      // "systems blueprint" can be followed by a later standalone "blueprint"
       cursor = h.pos + h.len;
+
       if (out.length >= 4) break;
     }
 
