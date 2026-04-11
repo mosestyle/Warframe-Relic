@@ -11,10 +11,12 @@
       .replace(/\bblueprints\b/g, "blueprint")
       .replace(/\bsysterns\b/g, "systems")
       .replace(/\bsystern\b/g, "system")
+      .replace(/\bsytems\b/g, "systems")
       .replace(/\bneuroptlcs\b/g, "neuroptics")
       .replace(/\bneuropticss\b/g, "neuroptics")
       .replace(/\brecelver\b/g, "receiver")
       .replace(/\bchassls\b/g, "chassis")
+      .replace(/\bassis\b/g, "chassis")
       .replace(/\bprlme\b/g, "prime")
       .replace(/\bpnme\b/g, "prime")
       .replace(/\bpor\b/g, "prime")
@@ -23,12 +25,13 @@
       .replace(/\bnovaprime\b/g, "nova prime")
       .replace(/\bcarrierprime\b/g, "carrier prime")
       .replace(/\bwakong\b/g, "wukong")
+      .replace(/\bnukong\b/g, "wukong")
       .replace(/\bmirag\b/g, "mirage")
+      .replace(/\bprifie\b/g, "prime")
       .replace(/\bdestreza prime h\b/g, "destreza prime handle")
+      .replace(/\bdle forma blueprint\b/g, "forma blueprint")
       .replace(/\bforma bluepnint\b/g, "forma blueprint")
       .replace(/\blueprint\b/g, "blueprint")
-      .replace(/\bassis\b/g, "chassis")
-      .replace(/\bsytems\b/g, "systems")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -49,7 +52,6 @@
     if (!n) return m;
 
     const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
 
@@ -76,7 +78,6 @@
     for (const t of at) {
       if (bt.has(t)) shared++;
     }
-
     return shared / Math.max(at.size, bt.size);
   }
 
@@ -97,14 +98,12 @@
   function fileToImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-
       reader.onload = () => {
         const img = new Image();
         img.onload = () => resolve({ img, dataUrl: reader.result });
         img.onerror = reject;
         img.src = reader.result;
       };
-
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
@@ -118,7 +117,7 @@
   }
 
   function prepareCanvas(img) {
-    const maxW = 2600;
+    const maxW = 2400;
     const scale = img.width > maxW ? (maxW / img.width) : 1;
     const canvas = makeCanvas(img.width * scale, img.height * scale);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -131,9 +130,9 @@
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
       const boosted =
-        gray > 175 ? 255 :
-        gray < 60 ? 0 :
-        Math.min(255, Math.max(0, gray * 1.22));
+        gray > 180 ? 255 :
+        gray < 70 ? 0 :
+        Math.min(255, Math.max(0, gray * 1.15));
 
       data[i] = boosted;
       data[i + 1] = boosted;
@@ -171,7 +170,7 @@
     return canvas;
   }
 
-  function thresholdCanvas(sourceCanvas, lightCut = 160, darkCut = 80) {
+  function thresholdCanvas(sourceCanvas, lightCut = 155, darkCut = 85) {
     const canvas = makeCanvas(sourceCanvas.width, sourceCanvas.height);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(sourceCanvas, 0, 0);
@@ -197,10 +196,11 @@
     const w = baseCanvas.width;
     const h = baseCanvas.height;
 
-    const x = w * 0.18;
-    const y = h * 0.18;
-    const cw = w * 0.66;
-    const ch = h * 0.30;
+    // safer / wider crop than the broken over-tight version
+    const x = w * 0.17;
+    const y = h * 0.22;
+    const cw = w * 0.67;
+    const ch = h * 0.34;
 
     return cropCanvas(baseCanvas, x, y, cw, ch);
   }
@@ -219,17 +219,17 @@
       const textBand = cropCanvas(
         rewardBandCanvas,
         x + slotW * 0.05,
-        fullH * 0.47,
+        fullH * 0.44,
         slotW * 0.90,
-        fullH * 0.24
+        fullH * 0.26
       );
 
       const tightText = cropCanvas(
         rewardBandCanvas,
         x + slotW * 0.08,
-        fullH * 0.54,
+        fullH * 0.52,
         slotW * 0.84,
-        fullH * 0.16
+        fullH * 0.18
       );
 
       slots.push({ fullSlot, textBand, tightText });
@@ -357,7 +357,7 @@
           }
         }
 
-        if (bestScore >= 0.86) {
+        if (bestScore >= 0.84) {
           hits.push({ root: bestRoot, pos: i, len, score: bestScore });
         }
       }
@@ -400,7 +400,7 @@
           }
         }
 
-        if (bestScore >= 0.78) {
+        if (bestScore >= 0.76) {
           hits.push({
             component: bestComp,
             pos: i,
@@ -442,7 +442,7 @@
       }
     }
 
-    if (bestScore >= 0.74) {
+    if (bestScore >= 0.72) {
       return { root: bestRoot, score: bestScore, source: bestSource };
     }
     return null;
@@ -464,7 +464,7 @@
       }
     }
 
-    if (bestScore >= 0.72) {
+    if (bestScore >= 0.70) {
       return { component: bestComp, score: bestScore, source: bestSource };
     }
     return null;
@@ -523,7 +523,7 @@
     }
 
     const best = bestItemFromCandidates(localCandidates, items);
-    if (best && best.score >= 0.58) {
+    if (best && best.score >= 0.56) {
       return { item: best.item, confidence: best.score, source: best.source };
     }
 
@@ -682,7 +682,7 @@
           `(slot ${i + 1}/4 text band)`
         );
         const tightTextText = await runOCR(
-          upscaleCanvas(thresholdCanvas(slot.tightText, 145, 85), 3),
+          upscaleCanvas(thresholdCanvas(slot.tightText, 145, 85), 2),
           setStatus,
           `(slot ${i + 1}/4 tight text)`
         );
@@ -716,10 +716,10 @@
           };
         }
 
-        if (!chosen && localRootHit && localRootHit.score >= 0.92 && rootMap.has(localRootHit.root)) {
+        if (!chosen && localRootHit && localRootHit.score >= 0.90 && rootMap.has(localRootHit.root)) {
           const items = rootMap.get(localRootHit.root).filter(x => !usedNames.has(x.name));
           const best = bestItemFromCandidates(localCandidates, items);
-          if (best && best.score >= 0.70) {
+          if (best && best.score >= 0.68) {
             chosen = {
               slot: i,
               ocrText: best.source || localRootHit.root,
