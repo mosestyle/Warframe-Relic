@@ -227,13 +227,14 @@ function buildItemIndex() {
 
 // scanner helpers
 function getKnownItemNames() {
-  const relicItems = ITEM_TO_RELICS
-    ? [...ITEM_TO_RELICS.values()].map(info => info.displayName).filter(Boolean)
-    : [];
+  // IMPORTANT:
+  // Only use real reward items from relic data as OCR candidates.
+  // prices.json is still used for price lookup, but NOT as OCR candidate universe.
+  if (!ITEM_TO_RELICS) return [];
 
-  const priceItems = Object.keys(PRICES || {}).filter(Boolean);
-
-  return [...new Set([...relicItems, ...priceItems])]
+  return [...ITEM_TO_RELICS.values()]
+    .map(info => info.displayName)
+    .filter(Boolean)
     .sort((a, b) => a.localeCompare(b));
 }
 
