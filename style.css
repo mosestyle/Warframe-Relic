@@ -5,8 +5,8 @@
   --muted:#95a3bd;
   --line:#233049;
 
-  --avail:#41d27a;
-  --vault:#f06a6a;
+  --avail:#41d27a;   /* green */
+  --vault:#f06a6a;   /* soft red */
 }
 
 * { box-sizing:border-box; }
@@ -41,6 +41,7 @@ p { margin: 0; }
 button {
   border:1px solid #2a3a5e; background:#1b2a48; color:var(--text);
   padding: 10px 14px; border-radius: 12px; font-weight:600;
+  cursor:pointer;
 }
 button.ghost { background: transparent; }
 .status { margin-left:auto; color: var(--muted); font-size: 12px; }
@@ -73,7 +74,7 @@ button.ghost { background: transparent; }
 .relicName.available{ color: var(--avail); }
 .relicName.vaulted{ color: var(--vault); }
 
-/* Dots */
+/* Option B dots */
 .relicDot{
   width: 10px;
   height: 10px;
@@ -105,7 +106,7 @@ button.ghost { background: transparent; }
 }
 .modalTitle{ font-weight: 750; font-size: 16px; flex:1; }
 
-/* Filter rows */
+/* filter row under Relics/Items */
 .modalFilterRow{
   display:flex;
   align-items:center;
@@ -141,37 +142,6 @@ button.ghost { background: transparent; }
   box-shadow: inset 0 0 0 1px #2a3a5e;
 }
 
-/* Items controls */
-.itemFilterStack{
-  width:100%;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-}
-.itemTopRow{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  flex-wrap:wrap;
-}
-.toggleBtn{
-  border:1px solid var(--line);
-  background:#0e1420;
-  color:var(--muted);
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-weight:800;
-}
-.toggleBtn.active{
-  background:#1b2a48;
-  color:var(--text);
-  border-color:#2a3a5e;
-}
-#itemHint{
-  white-space: normal;
-}
-
-/* Search */
 .modalSearch{ padding: 12px 16px; border-bottom:1px solid var(--line); }
 .modalSearch input{
   width:100%; padding: 12px 12px; border-radius: 12px;
@@ -191,7 +161,7 @@ button.ghost { background: transparent; }
 .modalItem strong{ display:block; font-size: 14px; }
 .modalItem span{ display:block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 
-/* Mode switch */
+/* Two-button mode switch */
 .modeButtons { display:flex; gap:8px; }
 .modeBtn{
   border:1px solid var(--line);
@@ -225,9 +195,9 @@ button.ghost { background: transparent; }
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.45;
 }
 
+/* Back row styling inside modal list */
 .modalBack{
   display:flex;
   align-items:center;
@@ -235,7 +205,112 @@ button.ghost { background: transparent; }
 }
 .modalBack strong{ font-size: 14px; }
 
+/* keep relic names inline in item-search modal preview */
 .modalSub .relicName{
   display:inline;
   margin-top:0;
+}
+
+/* Screenshot scanner */
+.scannerSection{
+  border-top:1px solid var(--line);
+  padding: 14px 16px 16px;
+}
+.scannerHeaderRow{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+}
+.scannerTitle{
+  margin:0 0 6px;
+  font-size:18px;
+}
+.scannerIntro{
+  line-height:1.45;
+}
+.scannerActions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+.scanPreviewWrap{
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#0e1420;
+  padding:10px;
+}
+.scanPreview{
+  display:block;
+  width:100%;
+  max-height:300px;
+  object-fit:contain;
+  border-radius:10px;
+}
+.scanResults{
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+}
+.scanResultRow{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  background:#0e1420;
+}
+.scanResultRow:last-child{ border-bottom:0; }
+.scanResultLeft{ min-width:0; }
+.scanResultName{
+  font-weight:700;
+  line-height:1.25;
+}
+.scanResultMeta{
+  margin-top:4px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.45;
+}
+.scanResultRight{
+  text-align:right;
+  min-width:72px;
+}
+.scanMedal{
+  font-size:20px;
+  line-height:1;
+}
+.scanPlat{
+  margin-top:6px;
+  font-weight:800;
+}
+.scanEmpty{
+  padding:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#0e1420;
+  color:var(--muted);
+  margin-top:12px;
+}
+.scanDebugWrap{
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 12px;
+  background:#0e1420;
+}
+.scanDebugWrap summary{
+  cursor:pointer;
+  color:var(--muted);
+}
+.scanDebugText{
+  white-space:pre-wrap;
+  word-break:break-word;
+  margin:10px 0 0;
+  color:var(--muted);
+  font-size:12px;
 }
