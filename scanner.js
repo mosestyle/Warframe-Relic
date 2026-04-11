@@ -1,5 +1,5 @@
 (function () {
-  const DEFAULT_MEDALS = ["🥇", "🥈", "🥉", "4th"];
+  const MEDALS = ["🥇", "🥈", "🥉", "4th"];
 
   function normalizeText(text) {
     return String(text || "")
@@ -44,14 +44,12 @@
   function tokenOverlapScore(a, b) {
     const at = new Set(normalizeText(a).split(" ").filter(Boolean));
     const bt = new Set(normalizeText(b).split(" ").filter(Boolean));
-
     if (!at.size || !bt.size) return 0;
 
     let shared = 0;
     for (const t of at) {
       if (bt.has(t)) shared++;
     }
-
     return shared / Math.max(at.size, bt.size);
   }
 
@@ -91,54 +89,12 @@
     return unique;
   }
 
-  function bestMatches(lines, knownItems, prices) {
-    const used = new Set();
-    const results = [];
-
-    for (const line of lines) {
-      let best = null;
-      let bestScore = 0;
-
-      for (const item of knownItems) {
-        if (used.has(item.name)) continue;
-
-        const score = stringScore(line, item.norm);
-        if (score > bestScore) {
-          bestScore = score;
-          best = item;
-        }
-      }
-
-      if (best && bestScore >= 0.55) {
-        used.add(best.name);
-        results.push({
-          ocrText: line,
-          itemName: best.name,
-          confidence: bestScore,
-          price: typeof prices[best.name] === "number" ? prices[best.name] : null
-        });
-      }
-    }
-
-    results.sort((a, b) =>
-      (b.price ?? -1) - (a.price ?? -1) ||
-      b.confidence - a.confidence ||
-      a.itemName.localeCompare(b.itemName)
-    );
-
-    return results.slice(0, 4).map((r, i) => ({
-      ...r,
-      medal: DEFAULT_MEDALS[i] || `${i + 1}th`
-    }));
-  }
-
   function fileToImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
       reader.onload = () => {
         const img = new Image();
-
         img.onload = () => resolve({ img, dataUrl: reader.result });
         img.onerror = reject;
         img.src = reader.result;
@@ -167,7 +123,6 @@
     for (let i = 0; i < data.length; i += 4) {
       const gray = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
       const boosted = gray > 165 ? 255 : gray < 90 ? 0 : gray;
-
       data[i] = boosted;
       data[i + 1] = boosted;
       data[i + 2] = boosted;
@@ -198,34 +153,6 @@
     return result?.data?.text || "";
   }
 
-  function renderResults(container, results) {
-    container.innerHTML = "";
-
-    if (!results.length) {
-      container.innerHTML = `<div class="scanEmpty">No confident item matches yet. Try a clearer screenshot of the reward screen.</div>`;
-      container.classList.remove("hidden");
-      return;
-    }
-
-    for (const row of results) {
-      const div = document.createElement("div");
-      div.className = "scanResultRow";
-      div.innerHTML = `
-        <div class="scanResultLeft">
-          <div class="scanResultName">${escapeHtml(row.itemName)}</div>
-          <div class="scanResultMeta">OCR: ${escapeHtml(row.ocrText)} • Match ${(row.confidence * 100).toFixed(0)}%</div>
-        </div>
-        <div class="scanResultRight">
-          <div class="scanMedal">${row.medal}</div>
-          <div class="scanPlat">${typeof row.price === "number" ? `${row.price}p` : "?"}</div>
-        </div>
-      `;
-      container.appendChild(div);
-    }
-
-    container.classList.remove("hidden");
-  }
-
   function escapeHtml(s) {
     return String(s ?? "")
       .replaceAll("&", "&amp;")
@@ -253,19 +180,101 @@
       if (statusEl) statusEl.textContent = msg || "";
     }
 
+    function setData(itemNames, priceMap) {
+      knownItems = [...new Set((itemNames || []).filter(Boolean))]
+        .map(name => ({
+          name,
+          norm: normalizeText(name)
+        }));
+      prices = priceMap || {};
+    }
+
     function clear() {
       if (fileInput) fileInput.value = "";
       if (previewImg) previewImg.removeAttribute("src");
 
       previewWrap?.classList.add("hidden");
 
-      resultsEl.innerHTML = "";
-      resultsEl.classList.add("hidden");
+      if (resultsEl) {
+        resultsEl.innerHTML = "";
+        resultsEl.classList.add("hidden");
+      }
 
-      debugText.textContent = "";
+      if (debugText) debugText.textContent = "";
       debugWrap?.classList.add("hidden");
 
       setStatus("Ready to scan");
+    }
+
+    function matchLinesToItems(lines) {
+      const used = new Set();
+      const results = [];
+
+      for (const line of lines) {
+        let best = null;
+        let bestScore = 0;
+
+        for (const item of knownItems) {
+          if (used.has(item.name)) continue;
+
+          const score = stringScore(line, item.norm);
+          if (score > bestScore) {
+            bestScore = score;
+            best = item;
+          }
+        }
+
+        if (best && bestScore >= 0.55) {
+          used.add(best.name);
+          results.push({
+            ocrText: line,
+            itemName: best.name,
+            confidence: bestScore,
+            price: typeof prices[best.name] === "number" ? prices[best.name] : null
+          });
+        }
+      }
+
+      results.sort((a, b) =>
+        (b.price ?? -1) - (a.price ?? -1) ||
+        b.confidence - a.confidence ||
+        a.itemName.localeCompare(b.itemName)
+      );
+
+      return results.slice(0, 4).map((row, i) => ({
+        ...row,
+        medal: MEDALS[i] || `${i + 1}th`
+      }));
+    }
+
+    function renderResults(rows) {
+      if (!resultsEl) return;
+
+      resultsEl.innerHTML = "";
+
+      if (!rows.length) {
+        resultsEl.innerHTML = `<div class="scannerEmpty">No confident item matches yet. Try a clearer screenshot of the reward screen.</div>`;
+        resultsEl.classList.remove("hidden");
+        return;
+      }
+
+      for (const row of rows) {
+        const div = document.createElement("div");
+        div.className = "scannerRow";
+        div.innerHTML = `
+          <div class="scannerLeft">
+            <div class="scannerName">${escapeHtml(row.itemName)}</div>
+            <div class="scannerMeta">OCR: ${escapeHtml(row.ocrText)} • Match ${(row.confidence * 100).toFixed(0)}%</div>
+          </div>
+          <div class="scannerRight">
+            <div class="scannerMedal">${row.medal}</div>
+            <div class="scannerPlat">${typeof row.price === "number" ? `${row.price}p` : "?"}</div>
+          </div>
+        `;
+        resultsEl.appendChild(div);
+      }
+
+      resultsEl.classList.remove("hidden");
     }
 
     async function handleFile(file) {
@@ -279,7 +288,7 @@
       setStatus("Reading image…");
       const { img, dataUrl } = await fileToImage(file);
 
-      previewImg.src = dataUrl;
+      if (previewImg) previewImg.src = dataUrl;
       previewWrap?.classList.remove("hidden");
 
       setStatus("Preparing image…");
@@ -287,11 +296,13 @@
 
       const rawText = await runOCR(canvas, setStatus);
       const lines = extractCandidateLines(rawText);
-      const matches = bestMatches(lines, knownItems, prices);
+      const matches = matchLinesToItems(lines);
 
-      renderResults(resultsEl, matches);
+      renderResults(matches);
 
-      debugText.textContent = rawText.trim() || "(No OCR text detected)";
+      if (debugText) {
+        debugText.textContent = rawText.trim() || "(No OCR text detected)";
+      }
       debugWrap?.classList.remove("hidden");
 
       setStatus(matches.length ? "Scan complete" : "Scan complete — no confident matches");
@@ -311,12 +322,7 @@
     clear();
 
     return {
-      setData(itemNames, priceMap) {
-        knownItems = [...new Set((itemNames || []).filter(Boolean))]
-          .map(name => ({ name, norm: normalizeText(name) }));
-
-        prices = priceMap || {};
-      },
+      setData,
       clear
     };
   };
