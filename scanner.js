@@ -312,52 +312,18 @@
     container.classList.remove("hidden");
   }
 
-  // ---------- new: resize/compress helpers ----------
-  function fileToDataUrl(file) {
+  function fileToImage(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = reader.result;
+      };
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-  }
-
-  function dataUrlToImage(dataUrl) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = reject;
-      img.src = dataUrl;
-    });
-  }
-
-  async function fileToImage(file, maxDim = 1600, quality = 0.92) {
-    const originalDataUrl = await fileToDataUrl(file);
-    const originalImg = await dataUrlToImage(originalDataUrl);
-
-    const ow = originalImg.width;
-    const oh = originalImg.height;
-    const longestSide = Math.max(ow, oh);
-
-    if (longestSide <= maxDim) {
-      return originalImg;
-    }
-
-    const scale = maxDim / longestSide;
-    const nw = Math.max(1, Math.round(ow * scale));
-    const nh = Math.max(1, Math.round(oh * scale));
-
-    const resizeCanvas = document.createElement("canvas");
-    resizeCanvas.width = nw;
-    resizeCanvas.height = nh;
-
-    const rctx = resizeCanvas.getContext("2d");
-    rctx.imageSmoothingEnabled = true;
-    rctx.imageSmoothingQuality = "high";
-    rctx.drawImage(originalImg, 0, 0, nw, nh);
-
-    const resizedDataUrl = resizeCanvas.toDataURL("image/jpeg", quality);
-    return dataUrlToImage(resizedDataUrl);
   }
 
   window.createScreenScanner = function createScreenScanner(options) {
@@ -1060,11 +1026,8 @@
       }
     }
 
-    // ---------- updated: auto-resize/compress chosen image ----------
     async function loadImageFromFile(file) {
-      setStatus("Preparing image...");
-
-      image = await fileToImage(file, 1600, 0.92);
+      image = await fileToImage(file);
       imageBitmap = image;
 
       stageWrap?.classList.remove("hidden");
