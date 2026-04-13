@@ -239,3 +239,178 @@ button.ghost { background: transparent; }
   display:inline;
   margin-top:0;
 }
+
+/* Scan section */
+.scanSection{
+  border-top:1px solid var(--line);
+  padding: 14px 16px 16px;
+}
+.scanTop{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.scanTitle{
+  font-size:16px;
+  font-weight:750;
+}
+.scanControls{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+.scanModeGroup{
+  display:flex;
+  gap:8px;
+}
+.scanModeBtn{
+  border:1px solid var(--line);
+  background:#0e1420;
+  color:var(--muted);
+}
+.scanModeBtn.active{
+  background:#1b2a48;
+  color:var(--text);
+  border-color:#2a3a5e;
+}
+.scanStatus{
+  margin-top:10px;
+}
+.scanStageWrap{
+  margin-top:12px;
+}
+.scanHint{
+  margin-bottom:8px;
+}
+.scanStage{
+  position:relative;
+  width:100%;
+  min-height:240px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#0e1420;
+  overflow:hidden;
+  touch-action:none;
+}
+.scanStage canvas{
+  display:block;
+  width:100%;
+  height:auto;
+}
+#scanCanvas{
+  position:relative;
+  z-index:1;
+}
+#scanOverlay{
+  position:absolute;
+  left:0;
+  top:0;
+  z-index:2;
+  pointer-events:none;
+}
+
+.scanPreviewGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-top:12px;
+}
+@media (min-width: 720px){
+  .scanPreviewGrid{
+    grid-template-columns:repeat(4, 1fr);
+  }
+}
+.scanPreviewCard{
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:#0e1420;
+  padding:8px;
+}
+.scanPreviewLabel{
+  font-size:12px;
+  color:var(--muted);
+  margin-bottom:6px;
+}
+.scanPreviewCard img{
+  width:100%;
+  height:90px;
+  object-fit:contain;
+  background:#0b0f14;
+  border-radius:8px;
+  display:block;
+}
+.scanActionsRow{
+  display:flex;
+  gap:10px;
+  margin-top:12px;
+}
+
+/* Scanner results */
+.scannerResults{
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  overflow:hidden;
+}
+.scannerRow{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 14px;
+  border-bottom:1px solid var(--line);
+  background:#0e1420;
+}
+.scannerRow:last-child{
+  border-bottom:0;
+}
+.scannerLeft{
+  min-width:0;
+}
+.scannerName{
+  font-weight:700;
+  line-height:1.25;
+}
+.scannerMeta{
+  margin-top:4px;
+  font-size:12px;
+  color:var(--muted);
+  line-height:1.45;
+}
+.scannerRight{
+  text-align:right;
+  min-width:72px;
+}
+.scannerMedal{
+  font-size:20px;
+  line-height:1;
+  min-height:24px;
+}
+.scannerPlat{
+  margin-top:6px;
+  font-weight:800;
+}
+.scannerEmpty{
+  padding:14px;
+  color:var(--muted);
+  background:#0e1420;
+}
+.scannerDebug{
+  margin-top:12px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px 12px;
+  background:#0e1420;
+}
+.scannerDebug summary{
+  cursor:pointer;
+  color:var(--muted);
+}
+.scannerDebug pre{
+  white-space:pre-wrap;
+  word-break:break-word;
+  margin:10px 0 0;
+  color:var(--muted);
+  font-size:12px;
+}
