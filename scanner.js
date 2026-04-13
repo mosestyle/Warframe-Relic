@@ -312,7 +312,7 @@
     }
 
     function clearAll() {
-      fileInput.value = "";
+      if (fileInput) fileInput.value = "";
       image = null;
       imageBitmap = null;
       renderW = 0;
@@ -424,7 +424,6 @@
       }
       overlayCtx.strokeStyle = "#41d27a";
 
-      // corner handles
       drawHandle(rect.x, rect.y);
       drawHandle(rect.x + rect.w, rect.y);
       drawHandle(rect.x, rect.y + rect.h);
@@ -478,7 +477,6 @@
     }
 
     function getTapCropRect(x, y) {
-      // tighter than before
       const w = renderW * 0.16;
       const h = renderH * 0.30;
 
@@ -526,10 +524,10 @@
     function cropFromDisplayedRect(rect, cropMode) {
       if (!imageBitmap) return null;
 
-      let srcX = rect.x * displayScale;
-      let srcY = rect.y * displayScale;
-      let srcW = rect.w * displayScale;
-      let srcH = rect.h * displayScale;
+      const srcX = rect.x * displayScale;
+      const srcY = rect.y * displayScale;
+      const srcW = rect.w * displayScale;
+      const srcH = rect.h * displayScale;
 
       const sourceCanvas = makeCanvas(image.width, image.height);
       const sctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
@@ -538,7 +536,6 @@
       let crop = cropCanvas(sourceCanvas, srcX, srcY, srcW, srcH);
 
       if (cropMode === "wide") {
-        // remove top "Owned" junk and bottom names
         const trimTop = crop.height * 0.22;
         const trimBottom = crop.height * 0.32;
         const trimmedH = crop.height - trimTop - trimBottom;
@@ -549,7 +546,6 @@
       }
 
       if (cropMode === "tap") {
-        // trim a bit from top and bottom to focus center reward label area
         const trimTop = crop.height * 0.18;
         const trimBottom = crop.height * 0.18;
         const trimmedH = crop.height - trimTop - trimBottom;
@@ -589,10 +585,8 @@
 
       for (const entry of rewardPool) {
         let score = stringScore(clean, entry.item);
-
         const normItem = normalizeText(entry.item);
 
-        // partial helpers
         if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
           score = Math.max(score, 0.74);
         }
@@ -733,7 +727,6 @@
       if (!imageBitmap) return;
 
       evt.preventDefault();
-
       stage.setPointerCapture?.(evt.pointerId);
 
       const p = getRelativePointerPos(evt);
@@ -777,13 +770,17 @@
       let y2 = originRect.y + originRect.h;
 
       if (handle === "nw") {
-        x1 = p.x; y1 = p.y;
+        x1 = p.x;
+        y1 = p.y;
       } else if (handle === "ne") {
-        x2 = p.x; y1 = p.y;
+        x2 = p.x;
+        y1 = p.y;
       } else if (handle === "sw") {
-        x1 = p.x; y2 = p.y;
+        x1 = p.x;
+        y2 = p.y;
       } else if (handle === "se") {
-        x2 = p.x; y2 = p.y;
+        x2 = p.x;
+        y2 = p.y;
       }
 
       return clampRect(normalizeRect(x1, y1, x2, y2));
@@ -880,12 +877,14 @@
     clearBtn?.addEventListener("click", clearAll);
     modeTapBtn?.addEventListener("click", () => setMode("tap"));
     modeWideBtn?.addEventListener("click", () => setMode("wide"));
+
     runBtn?.addEventListener("click", () => {
       analyzeCrops().catch((err) => {
         console.error(err);
         setStatus(`Scan failed: ${err.message || err}`);
       });
     });
+
     copyDebugBtn?.addEventListener("click", () => {
       copyDebugText().catch((err) => {
         console.error(err);
