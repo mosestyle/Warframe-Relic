@@ -22,6 +22,11 @@
       .replace(/\bnukong\b/g, "wukong")
       .replace(/\bmirag\b/g, "mirage")
       .replace(/\bprifie\b/g, "prime")
+      .replace(/\bkong prime systems\b/g, "wukong prime systems")
+      .replace(/\bprime systems\b/g, "prime systems blueprint")
+      .replace(/\bprime chassis\b/g, "prime chassis blueprint")
+      .replace(/\bprime neuroptics\b/g, "prime neuroptics blueprint")
+      .replace(/\bprime handle\b/g, "prime handle")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -218,6 +223,8 @@
     const resultsEl = document.getElementById(options.resultsId);
     const debugWrap = document.getElementById(options.debugWrapId);
     const debugText = document.getElementById(options.debugTextId);
+    const debugActionRow = document.getElementById("scanDebugActionRow");
+    const copyDebugBtn = document.getElementById("scanCopyDebugBtn");
     const getRewardPool = options.getRewardPool;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -240,8 +247,15 @@
       startY: 0,
       currentX: 0,
       currentY: 0,
-      moved: false
+      moved: false,
+      action: "draw",
+      handle: null,
+      originRect: null,
+      offsetX: 0,
+      offsetY: 0
     };
+
+    const HANDLE_SIZE = 14;
 
     function setStatus(msg) {
       if (statusEl) statusEl.textContent = msg || "";
@@ -278,7 +292,12 @@
         startY: 0,
         currentX: 0,
         currentY: 0,
-        moved: false
+        moved: false,
+        action: "draw",
+        handle: null,
+        originRect: null,
+        offsetX: 0,
+        offsetY: 0
       };
       wideRect = null;
       clearPreviewImages();
@@ -288,6 +307,8 @@
       }
       if (debugText) debugText.textContent = "";
       debugWrap?.classList.add("hidden");
+      debugActionRow?.classList.add("hidden");
+      stage.classList.remove("moving", "resizing", "crosshair");
     }
 
     function clearAll() {
@@ -371,12 +392,21 @@
           overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
         });
       } else {
-        const rect = pointerState.active
+        const rect = pointerState.active && pointerState.action === "draw"
           ? normalizeRect(pointerState.startX, pointerState.startY, pointerState.currentX, pointerState.currentY)
           : wideRect;
 
         if (rect) drawWideRect(rect);
       }
+    }
+
+    function drawHandle(x, y) {
+      overlayCtx.fillStyle = "#41d27a";
+      overlayCtx.fillRect(x - HANDLE_SIZE / 2, y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+      overlayCtx.strokeStyle = "#0b0f14";
+      overlayCtx.strokeRect(x - HANDLE_SIZE / 2, y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+      overlayCtx.strokeStyle = "#41d27a";
+      overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
     }
 
     function drawWideRect(rect) {
@@ -393,6 +423,12 @@
         overlayCtx.stroke();
       }
       overlayCtx.strokeStyle = "#41d27a";
+
+      // corner handles
+      drawHandle(rect.x, rect.y);
+      drawHandle(rect.x + rect.w, rect.y);
+      drawHandle(rect.x, rect.y + rect.h);
+      drawHandle(rect.x + rect.w, rect.y + rect.h);
     }
 
     function normalizeRect(x1, y1, x2, y2) {
@@ -403,6 +439,19 @@
       return { x, y, w, h };
     }
 
+    function clampRect(rect) {
+      const r = { ...rect };
+      if (r.w < 30) r.w = 30;
+      if (r.h < 20) r.h = 20;
+      if (r.x < 0) r.x = 0;
+      if (r.y < 0) r.y = 0;
+      if (r.x + r.w > renderW) r.x = renderW - r.w;
+      if (r.y + r.h > renderH) r.y = renderH - r.h;
+      if (r.x < 0) r.x = 0;
+      if (r.y < 0) r.y = 0;
+      return r;
+    }
+
     function getRelativePointerPos(evt) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -411,14 +460,30 @@
       };
     }
 
-    function getTapCropRect(x, y) {
-      // narrower + taller than before
-      const w = renderW * 0.19;
-      const h = renderH * 0.28;
+    function pointInRect(x, y, rect) {
+      return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
+    }
 
-      // slight downward bias
+    function pointNear(x, y, tx, ty, size = HANDLE_SIZE + 4) {
+      return Math.abs(x - tx) <= size && Math.abs(y - ty) <= size;
+    }
+
+    function getRectHandle(x, y, rect) {
+      if (!rect) return null;
+      if (pointNear(x, y, rect.x, rect.y)) return "nw";
+      if (pointNear(x, y, rect.x + rect.w, rect.y)) return "ne";
+      if (pointNear(x, y, rect.x, rect.y + rect.h)) return "sw";
+      if (pointNear(x, y, rect.x + rect.w, rect.y + rect.h)) return "se";
+      return null;
+    }
+
+    function getTapCropRect(x, y) {
+      // tighter than before
+      const w = renderW * 0.16;
+      const h = renderH * 0.30;
+
       const cx = x;
-      const cy = y + renderH * 0.03;
+      const cy = y + renderH * 0.02;
 
       let rx = cx - w / 2;
       let ry = cy - h / 2;
@@ -433,7 +498,7 @@
       cropCanvases = [null, null, null, null];
       tapPoints.forEach((p, i) => {
         const rect = getTapCropRect(p.x, p.y);
-        cropCanvases[i] = cropFromDisplayedRect(rect);
+        cropCanvases[i] = cropFromDisplayedRect(rect, "tap");
       });
       updateCropPreviews();
     }
@@ -453,24 +518,48 @@
           w: colW,
           h: wideRect.h
         };
-        cropCanvases[i] = cropFromDisplayedRect(rect);
+        cropCanvases[i] = cropFromDisplayedRect(rect, "wide");
       }
       updateCropPreviews();
     }
 
-    function cropFromDisplayedRect(rect) {
+    function cropFromDisplayedRect(rect, cropMode) {
       if (!imageBitmap) return null;
 
-      const srcX = rect.x * displayScale;
-      const srcY = rect.y * displayScale;
-      const srcW = rect.w * displayScale;
-      const srcH = rect.h * displayScale;
+      let srcX = rect.x * displayScale;
+      let srcY = rect.y * displayScale;
+      let srcW = rect.w * displayScale;
+      let srcH = rect.h * displayScale;
 
       const sourceCanvas = makeCanvas(image.width, image.height);
       const sctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
       sctx.drawImage(imageBitmap, 0, 0, image.width, image.height);
 
-      return cropCanvas(sourceCanvas, srcX, srcY, srcW, srcH);
+      let crop = cropCanvas(sourceCanvas, srcX, srcY, srcW, srcH);
+
+      if (cropMode === "wide") {
+        // remove top "Owned" junk and bottom names
+        const trimTop = crop.height * 0.22;
+        const trimBottom = crop.height * 0.32;
+        const trimmedH = crop.height - trimTop - trimBottom;
+
+        if (trimmedH > 20) {
+          crop = cropCanvas(crop, 0, trimTop, crop.width, trimmedH);
+        }
+      }
+
+      if (cropMode === "tap") {
+        // trim a bit from top and bottom to focus center reward label area
+        const trimTop = crop.height * 0.18;
+        const trimBottom = crop.height * 0.18;
+        const trimmedH = crop.height - trimTop - trimBottom;
+
+        if (trimmedH > 20) {
+          crop = cropCanvas(crop, 0, trimTop, crop.width, trimmedH);
+        }
+      }
+
+      return crop;
     }
 
     function updateCropPreviews() {
@@ -499,14 +588,37 @@
       let bestScore = 0;
 
       for (const entry of rewardPool) {
-        const score = stringScore(clean, entry.item);
+        let score = stringScore(clean, entry.item);
+
+        const normItem = normalizeText(entry.item);
+
+        // partial helpers
+        if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
+          score = Math.max(score, 0.74);
+        }
+        if (clean.includes("mirage") && clean.includes("chassis") && normItem.includes("mirage prime chassis blueprint")) {
+          score = Math.max(score, 0.74);
+        }
+        if (clean.includes("forma blueprint") && normItem === "forma blueprint") {
+          score = Math.max(score, 0.75);
+        }
+        if (clean.includes("destreza prime handle") && normItem === "destreza prime handle") {
+          score = Math.max(score, 0.80);
+        }
+        if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
+          score = Math.max(score, 0.80);
+        }
+        if (clean.includes("chassis blueprint") && clean.includes("mirage") && normItem.includes("mirage prime chassis blueprint")) {
+          score = Math.max(score, 0.80);
+        }
+
         if (score > bestScore) {
           bestScore = score;
           best = entry;
         }
       }
 
-      if (!best || bestScore < 0.42) return null;
+      if (!best || bestScore < 0.40) return null;
 
       return {
         ...best,
@@ -519,7 +631,7 @@
       const rewardPool = getRewardPoolSafe();
 
       if (!rewardPool.length) {
-        setStatus("Pick at least 1 relic first, then Analyze crops.");
+        setStatus("Select at least 1 relic in the relic picker above, then press Analyze crops.");
         return;
       }
 
@@ -580,8 +692,24 @@
 
       if (debugText) debugText.textContent = debugParts.join("\n\n");
       debugWrap?.classList.remove("hidden");
+      debugActionRow?.classList.remove("hidden");
 
       setStatus(finalMatches.length ? "Scan complete." : "Scan complete — no confident matches.");
+    }
+
+    async function copyDebugText() {
+      const txt = debugText?.textContent || "";
+      if (!txt.trim()) {
+        setStatus("No OCR debug text to copy.");
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(txt);
+        setStatus("OCR debug copied.");
+      } catch {
+        setStatus("Could not copy OCR debug.");
+      }
     }
 
     async function loadImage(file) {
@@ -596,6 +724,11 @@
       setStatus(mode === "tap" ? "Tap 4 reward cards." : "Drag one wide box across the reward text row.");
     }
 
+    function setStageCursorClass(cls) {
+      stage.classList.remove("moving", "resizing", "crosshair");
+      if (cls) stage.classList.add(cls);
+    }
+
     function onPointerDown(evt) {
       if (!imageBitmap) return;
 
@@ -604,16 +737,56 @@
       stage.setPointerCapture?.(evt.pointerId);
 
       const p = getRelativePointerPos(evt);
+
       pointerState.active = true;
       pointerState.startX = p.x;
       pointerState.startY = p.y;
       pointerState.currentX = p.x;
       pointerState.currentY = p.y;
       pointerState.moved = false;
+      pointerState.action = "draw";
+      pointerState.handle = null;
+      pointerState.originRect = wideRect ? { ...wideRect } : null;
+      pointerState.offsetX = 0;
+      pointerState.offsetY = 0;
 
-      if (mode === "wide") {
-        redraw();
+      if (mode === "wide" && wideRect) {
+        const handle = getRectHandle(p.x, p.y, wideRect);
+        if (handle) {
+          pointerState.action = "resize";
+          pointerState.handle = handle;
+          setStageCursorClass("resizing");
+        } else if (pointInRect(p.x, p.y, wideRect)) {
+          pointerState.action = "move";
+          pointerState.offsetX = p.x - wideRect.x;
+          pointerState.offsetY = p.y - wideRect.y;
+          setStageCursorClass("moving");
+        } else {
+          pointerState.action = "draw";
+          setStageCursorClass("crosshair");
+        }
+      } else if (mode === "wide") {
+        setStageCursorClass("crosshair");
       }
+    }
+
+    function applyResize(handle, originRect, p) {
+      let x1 = originRect.x;
+      let y1 = originRect.y;
+      let x2 = originRect.x + originRect.w;
+      let y2 = originRect.y + originRect.h;
+
+      if (handle === "nw") {
+        x1 = p.x; y1 = p.y;
+      } else if (handle === "ne") {
+        x2 = p.x; y1 = p.y;
+      } else if (handle === "sw") {
+        x1 = p.x; y2 = p.y;
+      } else if (handle === "se") {
+        x2 = p.x; y2 = p.y;
+      }
+
+      return clampRect(normalizeRect(x1, y1, x2, y2));
     }
 
     function onPointerMove(evt) {
@@ -627,11 +800,21 @@
 
       const dx = p.x - pointerState.startX;
       const dy = p.y - pointerState.startY;
-      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
         pointerState.moved = true;
       }
 
       if (mode === "wide") {
+        if (pointerState.action === "move" && wideRect) {
+          wideRect = clampRect({
+            x: p.x - pointerState.offsetX,
+            y: p.y - pointerState.offsetY,
+            w: wideRect.w,
+            h: wideRect.h
+          });
+        } else if (pointerState.action === "resize" && pointerState.originRect) {
+          wideRect = applyResize(pointerState.handle, pointerState.originRect, p);
+        }
         redraw();
       }
     }
@@ -660,27 +843,37 @@
           }
         }
       } else {
-        const rect = normalizeRect(
-          pointerState.startX,
-          pointerState.startY,
-          pointerState.currentX,
-          pointerState.currentY
-        );
+        if (pointerState.action === "draw") {
+          const rect = normalizeRect(
+            pointerState.startX,
+            pointerState.startY,
+            pointerState.currentX,
+            pointerState.currentY
+          );
 
-        if (rect.w < 30 || rect.h < 20) {
-          pointerState.active = false;
+          if (rect.w < 30 || rect.h < 20) {
+            pointerState.active = false;
+            setStageCursorClass("");
+            redraw();
+            setStatus("Wide-box too small. Try again.");
+            return;
+          }
+
+          wideRect = clampRect(rect);
+          buildCropCanvasesFromWideRect();
           redraw();
-          setStatus("Wide-box too small. Try again.");
-          return;
+          setStatus("Wide-box captured. Now press Analyze crops.");
+        } else if (pointerState.action === "move" || pointerState.action === "resize") {
+          if (wideRect) {
+            buildCropCanvasesFromWideRect();
+            redraw();
+            setStatus("Wide-box adjusted. Now press Analyze crops.");
+          }
         }
-
-        wideRect = rect;
-        buildCropCanvasesFromWideRect();
-        redraw();
-        setStatus("Wide-box captured. Now press Analyze crops.");
       }
 
       pointerState.active = false;
+      setStageCursorClass("");
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
@@ -691,6 +884,12 @@
       analyzeCrops().catch((err) => {
         console.error(err);
         setStatus(`Scan failed: ${err.message || err}`);
+      });
+    });
+    copyDebugBtn?.addEventListener("click", () => {
+      copyDebugText().catch((err) => {
+        console.error(err);
+        setStatus("Could not copy OCR debug.");
       });
     });
 
@@ -710,6 +909,7 @@
     stage.addEventListener("pointerup", onPointerUp);
     stage.addEventListener("pointercancel", () => {
       pointerState.active = false;
+      setStageCursorClass("");
       redraw();
     });
 
