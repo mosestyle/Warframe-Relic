@@ -14,6 +14,7 @@
       .replace(/\bneuropticss\b/g, "neuroptics")
       .replace(/\brecelver\b/g, "receiver")
       .replace(/\bchassls\b/g, "chassis")
+      .replace(/\bhassis\b/g, "chassis")
       .replace(/\bassis\b/g, "chassis")
       .replace(/\bprlme\b/g, "prime")
       .replace(/\bpnme\b/g, "prime")
@@ -237,7 +238,7 @@
     let renderH = 0;
 
     let mode = "tap";
-    let tapPoints = [];
+    let tapRects = [];
     let wideRect = null;
     let cropCanvases = [null, null, null, null];
 
@@ -252,7 +253,8 @@
       handle: null,
       originRect: null,
       offsetX: 0,
-      offsetY: 0
+      offsetY: 0,
+      tapIndex: -1
     };
 
     const HANDLE_SIZE = 14;
@@ -285,7 +287,7 @@
     }
 
     function clearSelectionOnly() {
-      tapPoints = [];
+      tapRects = [];
       pointerState = {
         active: false,
         startX: 0,
@@ -297,7 +299,8 @@
         handle: null,
         originRect: null,
         offsetX: 0,
-        offsetY: 0
+        offsetY: 0,
+        tapIndex: -1
       };
       wideRect = null;
       clearPreviewImages();
@@ -373,21 +376,23 @@
       overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
 
       if (mode === "tap") {
-        tapPoints.forEach((p, idx) => {
-          const box = getTapCropRect(p.x, p.y);
+        tapRects.forEach((box, idx) => {
           overlayCtx.fillRect(box.x, box.y, box.w, box.h);
           overlayCtx.strokeRect(box.x, box.y, box.w, box.h);
 
+          const cx = box.x + box.w / 2;
+          const cy = box.y + Math.min(22, box.h / 2);
+
           overlayCtx.fillStyle = "#41d27a";
           overlayCtx.beginPath();
-          overlayCtx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+          overlayCtx.arc(cx, cy, 10, 0, Math.PI * 2);
           overlayCtx.fill();
 
           overlayCtx.fillStyle = "#0b0f14";
           overlayCtx.font = "bold 12px system-ui";
           overlayCtx.textAlign = "center";
           overlayCtx.textBaseline = "middle";
-          overlayCtx.fillText(String(idx + 1), p.x, p.y);
+          overlayCtx.fillText(String(idx + 1), cx, cy);
 
           overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
         });
@@ -451,6 +456,20 @@
       return r;
     }
 
+    function snapWideRectToTextBand(rect) {
+      const top = rect.h * 0.22;
+      const bottom = rect.h * 0.32;
+      const h = rect.h - top - bottom;
+      if (h <= 20) return clampRect(rect);
+
+      return clampRect({
+        x: rect.x,
+        y: rect.y + top,
+        w: rect.w,
+        h
+      });
+    }
+
     function getRelativePointerPos(evt) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -476,7 +495,7 @@
       return null;
     }
 
-    function getTapCropRect(x, y) {
+    function getTapCropRectFromPoint(x, y) {
       const w = renderW * 0.16;
       const h = renderH * 0.30;
 
@@ -494,8 +513,7 @@
 
     function buildCropCanvasesFromTap() {
       cropCanvases = [null, null, null, null];
-      tapPoints.forEach((p, i) => {
-        const rect = getTapCropRect(p.x, p.y);
+      tapRects.forEach((rect, i) => {
         cropCanvases[i] = cropFromDisplayedRect(rect, "tap");
       });
       updateCropPreviews();
@@ -534,16 +552,6 @@
       sctx.drawImage(imageBitmap, 0, 0, image.width, image.height);
 
       let crop = cropCanvas(sourceCanvas, srcX, srcY, srcW, srcH);
-
-      if (cropMode === "wide") {
-        const trimTop = crop.height * 0.22;
-        const trimBottom = crop.height * 0.32;
-        const trimmedH = crop.height - trimTop - trimBottom;
-
-        if (trimmedH > 20) {
-          crop = cropCanvas(crop, 0, trimTop, crop.width, trimmedH);
-        }
-      }
 
       if (cropMode === "tap") {
         const trimTop = crop.height * 0.18;
@@ -588,22 +596,32 @@
         const normItem = normalizeText(entry.item);
 
         if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
-          score = Math.max(score, 0.74);
+          score = Math.max(score, 0.80);
         }
-        if (clean.includes("mirage") && clean.includes("chassis") && normItem.includes("mirage prime chassis blueprint")) {
-          score = Math.max(score, 0.74);
+
+        if (
+          clean.includes("mirage") &&
+          clean.includes("blueprint") &&
+          (clean.includes("chassis") || clean.includes("hassis") || clean.includes("assis")) &&
+          normItem.includes("mirage prime chassis blueprint")
+        ) {
+          score = Math.max(score, 0.82);
         }
+
         if (clean.includes("forma blueprint") && normItem === "forma blueprint") {
           score = Math.max(score, 0.75);
         }
+
         if (clean.includes("destreza prime handle") && normItem === "destreza prime handle") {
           score = Math.max(score, 0.80);
         }
+
         if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
-          score = Math.max(score, 0.80);
+          score = Math.max(score, 0.82);
         }
+
         if (clean.includes("chassis blueprint") && clean.includes("mirage") && normItem.includes("mirage prime chassis blueprint")) {
-          score = Math.max(score, 0.80);
+          score = Math.max(score, 0.82);
         }
 
         if (score > bestScore) {
@@ -619,6 +637,52 @@
         score: bestScore,
         ocrText: clean
       };
+    }
+
+    async function analyzeSingleCrop(crop, rewardPool, index, debugParts) {
+      const thresholded = upscaleCanvas(thresholdCanvas(crop, 150, 90), 2);
+      const plain = upscaleCanvas(crop, 2);
+
+      const textA = await runOCR(thresholded, setStatus, `crop ${index + 1}A`);
+      const matchA = getBestMatchForPool(textA, rewardPool);
+
+      let chosenText = textA;
+      let chosenMatch = matchA;
+
+      if (!matchA) {
+        const textB = await runOCR(plain, setStatus, `crop ${index + 1}B`);
+        const matchB = getBestMatchForPool(textB, rewardPool);
+
+        if (matchB) {
+          chosenText = textB;
+          chosenMatch = matchB;
+        }
+
+        debugParts.push(
+          `CROP ${index + 1}\n` +
+          `OCR A:\n${textA.trim() || "(none)"}\n\n` +
+          `CLEAN A:\n${cleanOcrText(textA) || "(none)"}\n\n` +
+          `BEST MATCH A:\n${matchA ? `${matchA.item} (${Math.round(matchA.score * 100)}%)` : "(none)"}\n\n` +
+          `OCR B:\n${textB.trim() || "(none)"}\n\n` +
+          `CLEAN B:\n${cleanOcrText(textB) || "(none)"}\n\n` +
+          `BEST MATCH B:\n${matchB ? `${matchB.item} (${Math.round(matchB.score * 100)}%)` : "(none)"}\n` +
+          `----------------------------------------`
+        );
+      } else {
+        debugParts.push(
+          `CROP ${index + 1}\n` +
+          `OCR:\n${textA.trim() || "(none)"}\n\n` +
+          `CLEAN:\n${cleanOcrText(textA) || "(none)"}\n\n` +
+          `BEST MATCH:\n${matchA ? `${matchA.item} (${Math.round(matchA.score * 100)}%)` : "(none)"}\n` +
+          `----------------------------------------`
+        );
+      }
+
+      return chosenMatch ? {
+        ...chosenMatch,
+        cropIndex: index,
+        ocrText: cleanOcrText(chosenText)
+      } : null;
     }
 
     async function analyzeCrops() {
@@ -642,24 +706,8 @@
         const crop = cropCanvases[i];
         if (!crop) continue;
 
-        const ocrCanvas = upscaleCanvas(thresholdCanvas(crop, 150, 90), 2);
-        const text = await runOCR(ocrCanvas, setStatus, `crop ${i + 1}`);
-        const match = getBestMatchForPool(text, rewardPool);
-
-        debugParts.push(
-          `CROP ${i + 1}\n` +
-          `OCR:\n${text.trim() || "(none)"}\n\n` +
-          `CLEAN:\n${cleanOcrText(text) || "(none)"}\n\n` +
-          `BEST MATCH:\n${match ? `${match.item} (${Math.round(match.score * 100)}%)` : "(none)"}\n` +
-          `----------------------------------------`
-        );
-
-        if (match) {
-          rawMatches.push({
-            ...match,
-            cropIndex: i
-          });
-        }
+        const match = await analyzeSingleCrop(crop, rewardPool, i, debugParts);
+        if (match) rawMatches.push(match);
       }
 
       const byBestItem = new Map();
@@ -739,26 +787,49 @@
       pointerState.moved = false;
       pointerState.action = "draw";
       pointerState.handle = null;
-      pointerState.originRect = wideRect ? { ...wideRect } : null;
+      pointerState.originRect = null;
       pointerState.offsetX = 0;
       pointerState.offsetY = 0;
+      pointerState.tapIndex = -1;
 
-      if (mode === "wide" && wideRect) {
-        const handle = getRectHandle(p.x, p.y, wideRect);
-        if (handle) {
-          pointerState.action = "resize";
-          pointerState.handle = handle;
-          setStageCursorClass("resizing");
-        } else if (pointInRect(p.x, p.y, wideRect)) {
-          pointerState.action = "move";
-          pointerState.offsetX = p.x - wideRect.x;
-          pointerState.offsetY = p.y - wideRect.y;
-          setStageCursorClass("moving");
-        } else {
-          pointerState.action = "draw";
-          setStageCursorClass("crosshair");
+      if (mode === "wide") {
+        if (wideRect) {
+          const handle = getRectHandle(p.x, p.y, wideRect);
+          if (handle) {
+            pointerState.action = "resize";
+            pointerState.handle = handle;
+            pointerState.originRect = { ...wideRect };
+            setStageCursorClass("resizing");
+            return;
+          }
+
+          if (pointInRect(p.x, p.y, wideRect)) {
+            pointerState.action = "move";
+            pointerState.offsetX = p.x - wideRect.x;
+            pointerState.offsetY = p.y - wideRect.y;
+            setStageCursorClass("moving");
+            return;
+          }
         }
-      } else if (mode === "wide") {
+
+        pointerState.action = "draw";
+        setStageCursorClass("crosshair");
+        return;
+      }
+
+      if (mode === "tap") {
+        for (let i = tapRects.length - 1; i >= 0; i--) {
+          const rect = tapRects[i];
+          if (pointInRect(p.x, p.y, rect)) {
+            pointerState.action = "moveTap";
+            pointerState.tapIndex = i;
+            pointerState.offsetX = p.x - rect.x;
+            pointerState.offsetY = p.y - rect.y;
+            setStageCursorClass("moving");
+            return;
+          }
+        }
+
         setStageCursorClass("crosshair");
       }
     }
@@ -809,9 +880,29 @@
             w: wideRect.w,
             h: wideRect.h
           });
-        } else if (pointerState.action === "resize" && pointerState.originRect) {
-          wideRect = applyResize(pointerState.handle, pointerState.originRect, p);
+          redraw();
+          return;
         }
+
+        if (pointerState.action === "resize" && pointerState.originRect) {
+          wideRect = applyResize(pointerState.handle, pointerState.originRect, p);
+          redraw();
+          return;
+        }
+
+        if (pointerState.action === "draw") {
+          redraw();
+          return;
+        }
+      }
+
+      if (mode === "tap" && pointerState.action === "moveTap" && pointerState.tapIndex >= 0) {
+        const rect = tapRects[pointerState.tapIndex];
+        if (!rect) return;
+
+        rect.x = Math.max(0, Math.min(renderW - rect.w, p.x - pointerState.offsetX));
+        rect.y = Math.max(0, Math.min(renderH - rect.h, p.y - pointerState.offsetY));
+        buildCropCanvasesFromTap();
         redraw();
       }
     }
@@ -826,20 +917,30 @@
       pointerState.currentY = p.y;
 
       if (mode === "tap") {
-        if (!pointerState.moved) {
-          if (tapPoints.length < 4) {
-            tapPoints.push({ x: p.x, y: p.y });
+        if (pointerState.action === "moveTap") {
+          buildCropCanvasesFromTap();
+          redraw();
+          setStatus("Tap crop adjusted. Now press Analyze crops.");
+        } else if (!pointerState.moved) {
+          if (tapRects.length < 4) {
+            tapRects.push(getTapCropRectFromPoint(p.x, p.y));
             buildCropCanvasesFromTap();
             redraw();
 
-            if (tapPoints.length === 4) {
-              setStatus("4 taps captured. Now press Analyze crops.");
+            if (tapRects.length === 4) {
+              setStatus("4 taps captured. You can drag each box, then press Analyze crops.");
             } else {
-              setStatus(`Tap captured (${tapPoints.length}/4).`);
+              setStatus(`Tap captured (${tapRects.length}/4).`);
             }
           }
         }
-      } else {
+
+        pointerState.active = false;
+        setStageCursorClass("");
+        return;
+      }
+
+      if (mode === "wide") {
         if (pointerState.action === "draw") {
           const rect = normalizeRect(
             pointerState.startX,
@@ -856,21 +957,22 @@
             return;
           }
 
-          wideRect = clampRect(rect);
+          wideRect = snapWideRectToTextBand(clampRect(rect));
           buildCropCanvasesFromWideRect();
           redraw();
           setStatus("Wide-box captured. Now press Analyze crops.");
         } else if (pointerState.action === "move" || pointerState.action === "resize") {
           if (wideRect) {
+            wideRect = snapWideRectToTextBand(clampRect(wideRect));
             buildCropCanvasesFromWideRect();
             redraw();
             setStatus("Wide-box adjusted. Now press Analyze crops.");
           }
         }
-      }
 
-      pointerState.active = false;
-      setStageCursorClass("");
+        pointerState.active = false;
+        setStageCursorClass("");
+      }
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
@@ -916,7 +1018,7 @@
       if (!image) return;
       fitImageToStage(image);
       redraw();
-      if (mode === "tap" && tapPoints.length) {
+      if (mode === "tap" && tapRects.length) {
         buildCropCanvasesFromTap();
       } else if (mode === "wide" && wideRect) {
         buildCropCanvasesFromWideRect();
