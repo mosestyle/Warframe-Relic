@@ -62,6 +62,74 @@
       <div id="cards"></div>
     </section>
 
+    <section class="scanSection" id="scanSection">
+      <div class="scanTop">
+        <div class="scanTitle">Scan reward screenshot</div>
+        <div class="muted small">
+          Upload a screenshot and test two modes:
+          <strong>Tap mode</strong> or <strong>Wide-box mode</strong>.
+          OCR will match only against the current possible rewards from your selected relics.
+        </div>
+      </div>
+
+      <div class="scanControls">
+        <button id="scanUploadBtn" type="button">Upload screenshot</button>
+        <button id="scanClearBtn" class="ghost" type="button">Clear scan</button>
+
+        <div class="scanModeGroup">
+          <button id="scanModeTap" class="scanModeBtn active" type="button">Tap mode</button>
+          <button id="scanModeWide" class="scanModeBtn" type="button">Wide-box mode</button>
+        </div>
+
+        <input id="scanFileInput" class="hidden" type="file" accept="image/*" />
+      </div>
+
+      <div id="scanStatus" class="muted small scanStatus">
+        Pick relics, then upload a screenshot.
+      </div>
+
+      <div class="scanStageWrap hidden" id="scanStageWrap">
+        <div class="scanHint muted small" id="scanHint">
+          Tap 4 reward cards.
+        </div>
+
+        <div class="scanStage" id="scanStage">
+          <canvas id="scanCanvas"></canvas>
+          <canvas id="scanOverlay"></canvas>
+        </div>
+      </div>
+
+      <div class="scanPreviewGrid hidden" id="scanPreviews">
+        <div class="scanPreviewCard">
+          <div class="scanPreviewLabel">Crop 1</div>
+          <img id="scanPreview1" alt="Crop 1 preview" />
+        </div>
+        <div class="scanPreviewCard">
+          <div class="scanPreviewLabel">Crop 2</div>
+          <img id="scanPreview2" alt="Crop 2 preview" />
+        </div>
+        <div class="scanPreviewCard">
+          <div class="scanPreviewLabel">Crop 3</div>
+          <img id="scanPreview3" alt="Crop 3 preview" />
+        </div>
+        <div class="scanPreviewCard">
+          <div class="scanPreviewLabel">Crop 4</div>
+          <img id="scanPreview4" alt="Crop 4 preview" />
+        </div>
+      </div>
+
+      <div class="scanActionsRow hidden" id="scanActionRow">
+        <button id="scanRunBtn" type="button">Analyze crops</button>
+      </div>
+
+      <div class="scannerResults hidden" id="scanResults"></div>
+
+      <details class="scannerDebug hidden" id="scanDebugWrap">
+        <summary>OCR debug</summary>
+        <pre id="scanDebugText"></pre>
+      </details>
+    </section>
+
     <footer class="muted small" id="footer"></footer>
   </main>
 
@@ -77,7 +145,6 @@
       </div>
     </div>
 
-    <!-- RELICS filter row -->
     <div class="modalFilterRow" id="relicFilterRow">
       <div class="seg" role="group" aria-label="Filter relics by vault status">
         <button id="rfAll" class="segBtn active" type="button">All</button>
@@ -87,7 +154,6 @@
       <div class="modalFilterHint muted small" id="vaultHint"></div>
     </div>
 
-    <!-- ITEMS controls -->
     <div class="modalFilterRow hidden" id="itemFilterRow">
       <div class="itemFilterStack">
         <div class="itemTopRow">
@@ -113,6 +179,8 @@
     <div id="modalList" class="modalList"></div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="scanner.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
