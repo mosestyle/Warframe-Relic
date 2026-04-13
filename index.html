@@ -93,7 +93,7 @@
           Tap 4 reward cards.
         </div>
 
-        <div class="scanStage" id="scanStage">
+        <div class="scanStage crosshair" id="scanStage">
           <canvas id="scanCanvas"></canvas>
           <canvas id="scanOverlay"></canvas>
         </div>
@@ -128,6 +128,10 @@
         <summary>OCR debug</summary>
         <pre id="scanDebugText"></pre>
       </details>
+
+      <div class="scanActionsRow hidden" id="scanDebugActionRow">
+        <button id="scanCopyDebugBtn" class="ghost" type="button">Copy OCR debug</button>
+      </div>
     </section>
 
     <footer class="muted small" id="footer"></footer>
