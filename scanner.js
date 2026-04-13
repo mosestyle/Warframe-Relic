@@ -231,9 +231,17 @@
 
     let mode = "tap";
     let tapPoints = [];
-    let dragState = null;
     let wideRect = null;
     let cropCanvases = [null, null, null, null];
+
+    let pointerState = {
+      active: false,
+      startX: 0,
+      startY: 0,
+      currentX: 0,
+      currentY: 0,
+      moved: false
+    };
 
     function setStatus(msg) {
       if (statusEl) statusEl.textContent = msg || "";
@@ -264,7 +272,14 @@
 
     function clearSelectionOnly() {
       tapPoints = [];
-      dragState = null;
+      pointerState = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        currentX: 0,
+        currentY: 0,
+        moved: false
+      };
       wideRect = null;
       clearPreviewImages();
       if (resultsEl) {
@@ -356,13 +371,11 @@
           overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
         });
       } else {
-        if (wideRect) {
-          drawWideRect(wideRect);
-        }
-        if (dragState && dragState.active) {
-          const rect = normalizeRect(dragState.startX, dragState.startY, dragState.currentX, dragState.currentY);
-          drawWideRect(rect);
-        }
+        const rect = pointerState.active
+          ? normalizeRect(pointerState.startX, pointerState.startY, pointerState.currentX, pointerState.currentY)
+          : wideRect;
+
+        if (rect) drawWideRect(rect);
       }
     }
 
@@ -392,19 +405,20 @@
 
     function getRelativePointerPos(evt) {
       const rect = canvas.getBoundingClientRect();
-      const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
-      const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
       return {
-        x: Math.max(0, Math.min(renderW, clientX - rect.left)),
-        y: Math.max(0, Math.min(renderH, clientY - rect.top))
+        x: Math.max(0, Math.min(renderW, evt.clientX - rect.left)),
+        y: Math.max(0, Math.min(renderH, evt.clientY - rect.top))
       };
     }
 
     function getTapCropRect(x, y) {
-      const w = renderW * 0.24;
-      const h = renderH * 0.18;
+      // narrower + taller than before
+      const w = renderW * 0.19;
+      const h = renderH * 0.28;
+
+      // slight downward bias
       const cx = x;
-      const cy = y + renderH * 0.02;
+      const cy = y + renderH * 0.03;
 
       let rx = cx - w / 2;
       let ry = cy - h / 2;
@@ -477,122 +491,6 @@
       actionRow?.classList.toggle("hidden", !any);
     }
 
-    function handleTapModePointerDown(evt) {
-      evt.preventDefault();
-      if (!imageBitmap) return;
-      if (tapPoints.length >= 4) return;
-
-      const p = getRelativePointerPos(evt);
-      tapPoints.push(p);
-      buildCropCanvasesFromTap();
-      redraw();
-
-      if (tapPoints.length === 4) {
-        setStatus("4 taps captured. Run analysis.");
-      } else {
-        setStatus(`Tap captured (${tapPoints.length}/4).`);
-      }
-    }
-
-    function handleWideModePointerDown(evt) {
-      evt.preventDefault();
-      if (!imageBitmap) return;
-
-      const p = getRelativePointerPos(evt);
-      dragState = {
-        active: true,
-        startX: p.x,
-        startY: p.y,
-        currentX: p.x,
-        currentY: p.y
-      };
-      redraw();
-    }
-
-    function handleWideModePointerMove(evt) {
-      if (!dragState || !dragState.active) return;
-      evt.preventDefault();
-      const p = getRelativePointerPos(evt);
-      dragState.currentX = p.x;
-      dragState.currentY = p.y;
-      redraw();
-    }
-
-    function handleWideModePointerUp(evt) {
-      if (!dragState || !dragState.active) return;
-      evt.preventDefault();
-
-      const p = getRelativePointerPos(evt);
-      dragState.currentX = p.x;
-      dragState.currentY = p.y;
-
-      let rect = normalizeRect(
-        dragState.startX,
-        dragState.startY,
-        dragState.currentX,
-        dragState.currentY
-      );
-
-      if (rect.w < 30 || rect.h < 20) {
-        dragState = null;
-        redraw();
-        setStatus("Wide-box too small. Try again.");
-        return;
-      }
-
-      wideRect = rect;
-      dragState = null;
-      buildCropCanvasesFromWideRect();
-      redraw();
-      setStatus("Wide-box captured. Run analysis.");
-    }
-
-    function bindStageHandlers() {
-      stage.addEventListener("click", (evt) => {
-        if (mode !== "tap") return;
-        handleTapModePointerDown(evt);
-      });
-
-      stage.addEventListener("mousedown", (evt) => {
-        if (mode !== "wide") return;
-        handleWideModePointerDown(evt);
-      });
-
-      window.addEventListener("mousemove", (evt) => {
-        if (mode !== "wide") return;
-        handleWideModePointerMove(evt);
-      });
-
-      window.addEventListener("mouseup", (evt) => {
-        if (mode !== "wide") return;
-        handleWideModePointerUp(evt);
-      });
-
-      stage.addEventListener("touchstart", (evt) => {
-        if (mode === "tap") {
-          handleTapModePointerDown(evt);
-        } else {
-          handleWideModePointerDown(evt);
-        }
-      }, { passive: false });
-
-      stage.addEventListener("touchmove", (evt) => {
-        if (mode !== "wide") return;
-        handleWideModePointerMove(evt);
-      }, { passive: false });
-
-      stage.addEventListener("touchend", (evt) => {
-        if (mode !== "wide") return;
-        if (!dragState) return;
-        handleWideModePointerUp({
-          ...evt,
-          clientX: evt.changedTouches?.[0]?.clientX,
-          clientY: evt.changedTouches?.[0]?.clientY,
-          touches: evt.changedTouches
-        });
-      }, { passive: false });
-    }
-
     function getBestMatchForPool(ocrText, rewardPool) {
       const clean = cleanOcrText(ocrText);
       if (!clean) return null;
@@ -621,7 +519,7 @@
       const rewardPool = getRewardPoolSafe();
 
       if (!rewardPool.length) {
-        setStatus("Pick relics first so the scanner knows the current reward pool.");
+        setStatus("Pick at least 1 relic first, then Analyze crops.");
         return;
       }
 
@@ -695,7 +593,94 @@
       clearSelectionOnly();
       redraw();
       setHint();
-      setStatus(mode === "tap" ? "Tap 4 reward cards." : "Draw one wide box across the reward text row.");
+      setStatus(mode === "tap" ? "Tap 4 reward cards." : "Drag one wide box across the reward text row.");
+    }
+
+    function onPointerDown(evt) {
+      if (!imageBitmap) return;
+
+      evt.preventDefault();
+
+      stage.setPointerCapture?.(evt.pointerId);
+
+      const p = getRelativePointerPos(evt);
+      pointerState.active = true;
+      pointerState.startX = p.x;
+      pointerState.startY = p.y;
+      pointerState.currentX = p.x;
+      pointerState.currentY = p.y;
+      pointerState.moved = false;
+
+      if (mode === "wide") {
+        redraw();
+      }
+    }
+
+    function onPointerMove(evt) {
+      if (!pointerState.active) return;
+
+      evt.preventDefault();
+
+      const p = getRelativePointerPos(evt);
+      pointerState.currentX = p.x;
+      pointerState.currentY = p.y;
+
+      const dx = p.x - pointerState.startX;
+      const dy = p.y - pointerState.startY;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        pointerState.moved = true;
+      }
+
+      if (mode === "wide") {
+        redraw();
+      }
+    }
+
+    function onPointerUp(evt) {
+      if (!pointerState.active) return;
+
+      evt.preventDefault();
+
+      const p = getRelativePointerPos(evt);
+      pointerState.currentX = p.x;
+      pointerState.currentY = p.y;
+
+      if (mode === "tap") {
+        if (!pointerState.moved) {
+          if (tapPoints.length < 4) {
+            tapPoints.push({ x: p.x, y: p.y });
+            buildCropCanvasesFromTap();
+            redraw();
+
+            if (tapPoints.length === 4) {
+              setStatus("4 taps captured. Now press Analyze crops.");
+            } else {
+              setStatus(`Tap captured (${tapPoints.length}/4).`);
+            }
+          }
+        }
+      } else {
+        const rect = normalizeRect(
+          pointerState.startX,
+          pointerState.startY,
+          pointerState.currentX,
+          pointerState.currentY
+        );
+
+        if (rect.w < 30 || rect.h < 20) {
+          pointerState.active = false;
+          redraw();
+          setStatus("Wide-box too small. Try again.");
+          return;
+        }
+
+        wideRect = rect;
+        buildCropCanvasesFromWideRect();
+        redraw();
+        setStatus("Wide-box captured. Now press Analyze crops.");
+      }
+
+      pointerState.active = false;
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
@@ -720,6 +705,14 @@
       }
     });
 
+    stage.addEventListener("pointerdown", onPointerDown);
+    stage.addEventListener("pointermove", onPointerMove);
+    stage.addEventListener("pointerup", onPointerUp);
+    stage.addEventListener("pointercancel", () => {
+      pointerState.active = false;
+      redraw();
+    });
+
     window.addEventListener("resize", () => {
       if (!image) return;
       fitImageToStage(image);
@@ -731,7 +724,6 @@
       }
     });
 
-    bindStageHandlers();
     setHint();
     clearAll();
 
