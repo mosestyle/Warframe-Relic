@@ -28,6 +28,7 @@
       .replace(/\bprime chassis\b/g, "prime chassis blueprint")
       .replace(/\bprime neuroptics\b/g, "prime neuroptics blueprint")
       .replace(/\bprime handle\b/g, "prime handle")
+      .replace(/\bprime cerebrum\b/g, "prime cerebrum")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -175,6 +176,121 @@
         .replace(/\s+/g, " ")
         .trim()
     );
+  }
+
+  function splitCleanLines(raw) {
+    return String(raw || "")
+      .split(/\r?\n/)
+      .map(line => cleanOcrText(line))
+      .filter(Boolean);
+  }
+
+  function tokenCount(s) {
+    return normalizeText(s).split(" ").filter(Boolean).length;
+  }
+
+  function hasItemishWord(s) {
+    const x = normalizeText(s);
+    return (
+      x.includes("prime") ||
+      x.includes("blueprint") ||
+      x.includes("systems") ||
+      x.includes("neuroptics") ||
+      x.includes("chassis") ||
+      x.includes("cerebrum") ||
+      x.includes("receiver") ||
+      x.includes("barrel") ||
+      x.includes("handle") ||
+      x.includes("carapace") ||
+      x.includes("gauntlet") ||
+      x.includes("grip") ||
+      x.includes("collar")
+    );
+  }
+
+  function buildPhraseCandidates(rawText) {
+    const lines = splitCleanLines(rawText);
+    const candidates = new Set();
+
+    // whole cleaned text
+    const whole = cleanOcrText(rawText);
+    if (whole) candidates.add(whole);
+
+    // individual lines
+    for (const line of lines) {
+      if (line) candidates.add(line);
+    }
+
+    // join adjacent lines
+    for (let i = 0; i < lines.length; i++) {
+      const a = lines[i];
+      if (!a) continue;
+      if (i + 1 < lines.length) {
+        const b = lines[i + 1];
+        if (b) candidates.add(cleanOcrText(`${a} ${b}`));
+      }
+      if (i + 2 < lines.length) {
+        const b = lines[i + 1];
+        const c = lines[i + 2];
+        if (b && c) candidates.add(cleanOcrText(`${a} ${b} ${c}`));
+      }
+    }
+
+    // extract item-like suffixes from candidate lines
+    const expanded = new Set([...candidates]);
+    for (const cand of [...candidates]) {
+      const words = normalizeText(cand).split(" ").filter(Boolean);
+      for (let start = 0; start < words.length; start++) {
+        const sub = words.slice(start).join(" ");
+        if (hasItemishWord(sub) && tokenCount(sub) >= 2) {
+          expanded.add(sub);
+        }
+      }
+    }
+
+    // keep only item-like or reasonably sized candidates
+    const finalList = [...expanded]
+      .map(s => normalizeText(s))
+      .filter(Boolean)
+      .filter(s => hasItemishWord(s) || tokenCount(s) >= 3);
+
+    // prefer more item-like / compact phrases
+    finalList.sort((a, b) => {
+      const ai = (hasItemishWord(a) ? 1 : 0);
+      const bi = (hasItemishWord(b) ? 1 : 0);
+      if (bi !== ai) return bi - ai;
+      return a.length - b.length;
+    });
+
+    return [...new Set(finalList)];
+  }
+
+  function buildSubstringCandidates(phrase) {
+    const words = normalizeText(phrase).split(" ").filter(Boolean);
+    const out = new Set();
+
+    if (!words.length) return [];
+
+    // original phrase
+    out.add(words.join(" "));
+
+    // contiguous substrings length 2..6
+    for (let len = Math.min(6, words.length); len >= 2; len--) {
+      for (let i = 0; i + len <= words.length; i++) {
+        const sub = words.slice(i, i + len).join(" ");
+        if (hasItemishWord(sub) || len >= 3) out.add(sub);
+      }
+    }
+
+    // suffixes
+    for (let i = 0; i < words.length; i++) {
+      const sub = words.slice(i).join(" ");
+      if ((hasItemishWord(sub) || tokenCount(sub) >= 2) && tokenCount(sub) <= 6) {
+        out.add(sub);
+      }
+    }
+
+    return [...out];
   }
 
   function renderScanResults(container, rows) {
@@ -585,48 +701,64 @@
     }
 
     function getBestMatchForPool(ocrText, rewardPool) {
-      const clean = cleanOcrText(ocrText);
-      if (!clean) return null;
+      const phraseCandidates = buildPhraseCandidates(ocrText);
 
       let best = null;
       let bestScore = 0;
+      let bestPhrase = "";
 
-      for (const entry of rewardPool) {
-        let score = stringScore(clean, entry.item);
-        const normItem = normalizeText(entry.item);
+      for (const phrase of phraseCandidates) {
+        const subCandidates = buildSubstringCandidates(phrase);
 
-        if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
-          score = Math.max(score, 0.80);
-        }
+        for (const candidatePhrase of subCandidates) {
+          for (const entry of rewardPool) {
+            let score = stringScore(candidatePhrase, entry.item);
+            const normItem = normalizeText(entry.item);
+            const clean = normalizeText(candidatePhrase);
 
-        if (
-          clean.includes("mirage") &&
-          clean.includes("blueprint") &&
-          (clean.includes("chassis") || clean.includes("hassis") || clean.includes("assis")) &&
-          normItem.includes("mirage prime chassis blueprint")
-        ) {
-          score = Math.max(score, 0.82);
-        }
+            if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
+              score = Math.max(score, 0.80);
+            }
 
-        if (clean.includes("forma blueprint") && normItem === "forma blueprint") {
-          score = Math.max(score, 0.75);
-        }
+            if (
+              clean.includes("mirage") &&
+              clean.includes("blueprint") &&
+              (clean.includes("chassis") || clean.includes("hassis") || clean.includes("assis")) &&
+              normItem.includes("mirage prime chassis blueprint")
+            ) {
+              score = Math.max(score, 0.82);
+            }
 
-        if (clean.includes("destreza prime handle") && normItem === "destreza prime handle") {
-          score = Math.max(score, 0.80);
-        }
+            if (clean.includes("ash prime blueprint") && normItem === "ash prime blueprint") {
+              score = Math.max(score, 0.84);
+            }
 
-        if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
-          score = Math.max(score, 0.82);
-        }
+            if (clean.includes("forma blueprint") && normItem === "forma blueprint") {
+              score = Math.max(score, 0.78);
+            }
 
-        if (clean.includes("chassis blueprint") && clean.includes("mirage") && normItem.includes("mirage prime chassis blueprint")) {
-          score = Math.max(score, 0.82);
-        }
+            if (clean.includes("destreza prime handle") && normItem === "destreza prime handle") {
+              score = Math.max(score, 0.82);
+            }
 
-        if (score > bestScore) {
-          bestScore = score;
-          best = entry;
+            if (clean.includes("nova prime neuroptics blueprint") && normItem === "nova prime neuroptics blueprint") {
+              score = Math.max(score, 0.82);
+            }
+
+            if (clean.includes("carrier prime cerebrum") && normItem === "carrier prime cerebrum") {
+              score = Math.max(score, 0.90);
+            }
+
+            if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
+              score = Math.max(score, 0.82);
+            }
+
+            if (score > bestScore) {
+              bestScore = score;
+              best = entry;
+              bestPhrase = clean;
+            }
+          }
         }
       }
 
@@ -635,7 +767,7 @@
       return {
         ...best,
         score: bestScore,
-        ocrText: clean
+        ocrText: bestPhrase || cleanOcrText(ocrText)
       };
     }
 
@@ -646,42 +778,36 @@
       const textA = await runOCR(thresholded, setStatus, `crop ${index + 1}A`);
       const matchA = getBestMatchForPool(textA, rewardPool);
 
+      let textB = "";
+      let matchB = null;
       let chosenText = textA;
       let chosenMatch = matchA;
 
       if (!matchA) {
-        const textB = await runOCR(plain, setStatus, `crop ${index + 1}B`);
-        const matchB = getBestMatchForPool(textB, rewardPool);
+        textB = await runOCR(plain, setStatus, `crop ${index + 1}B`);
+        matchB = getBestMatchForPool(textB, rewardPool);
 
         if (matchB) {
           chosenText = textB;
           chosenMatch = matchB;
         }
-
-        debugParts.push(
-          `CROP ${index + 1}\n` +
-          `OCR A:\n${textA.trim() || "(none)"}\n\n` +
-          `CLEAN A:\n${cleanOcrText(textA) || "(none)"}\n\n` +
-          `BEST MATCH A:\n${matchA ? `${matchA.item} (${Math.round(matchA.score * 100)}%)` : "(none)"}\n\n` +
-          `OCR B:\n${textB.trim() || "(none)"}\n\n` +
-          `CLEAN B:\n${cleanOcrText(textB) || "(none)"}\n\n` +
-          `BEST MATCH B:\n${matchB ? `${matchB.item} (${Math.round(matchB.score * 100)}%)` : "(none)"}\n` +
-          `----------------------------------------`
-        );
-      } else {
-        debugParts.push(
-          `CROP ${index + 1}\n` +
-          `OCR:\n${textA.trim() || "(none)"}\n\n` +
-          `CLEAN:\n${cleanOcrText(textA) || "(none)"}\n\n` +
-          `BEST MATCH:\n${matchA ? `${matchA.item} (${Math.round(matchA.score * 100)}%)` : "(none)"}\n` +
-          `----------------------------------------`
-        );
       }
+
+      debugParts.push(
+        `CROP ${index + 1}\n` +
+        `OCR A:\n${textA.trim() || "(none)"}\n\n` +
+        `CLEAN A:\n${cleanOcrText(textA) || "(none)"}\n\n` +
+        `BEST MATCH A:\n${matchA ? `${matchA.item} (${Math.round(matchA.score * 100)}%)` : "(none)"}\n\n` +
+        `OCR B:\n${textB ? textB.trim() : "(not used)"}\n\n` +
+        `CLEAN B:\n${textB ? (cleanOcrText(textB) || "(none)") : "(not used)"}\n\n` +
+        `BEST MATCH B:\n${matchB ? `${matchB.item} (${Math.round(matchB.score * 100)}%)` : textB ? "(none)" : "(not used)"}\n` +
+        `----------------------------------------`
+      );
 
       return chosenMatch ? {
         ...chosenMatch,
         cropIndex: index,
-        ocrText: cleanOcrText(chosenText)
+        ocrText: chosenMatch.ocrText || cleanOcrText(chosenText)
       } : null;
     }
 
