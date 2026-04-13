@@ -66,14 +66,15 @@
       <div class="scanTop">
         <div class="scanTitle">Scan reward screenshot</div>
         <div class="muted small">
-          Upload a screenshot and test three modes:
-          <strong>Tap mode</strong>, <strong>Wide-box mode</strong>, or <strong>Full mode</strong>.
+          Upload a screenshot, take a photo, and scan with
+          <strong>Full mode</strong>, <strong>Tap mode</strong>, or <strong>Wide-box mode</strong>.
           OCR will match only against the current possible rewards from your selected relics.
         </div>
       </div>
 
       <div class="scanControls">
         <button id="scanUploadBtn" type="button">Upload screenshot</button>
+        <button id="scanCameraBtn" type="button">Take photo</button>
         <button id="scanClearBtn" class="ghost" type="button">Clear scan</button>
 
         <div class="scanModeGroup">
@@ -83,15 +84,16 @@
         </div>
 
         <input id="scanFileInput" class="hidden" type="file" accept="image/*" />
+        <input id="scanCameraInput" class="hidden" type="file" accept="image/*" capture="environment" />
       </div>
 
       <div id="scanStatus" class="muted small scanStatus">
-        Pick relics, then upload a screenshot.
+        Pick relics, then upload a screenshot or take a photo.
       </div>
 
       <div class="scanStageWrap hidden" id="scanStageWrap">
         <div class="scanHint muted small" id="scanHint">
-          Tap 4 reward cards.
+          Drag one box across the reward text row for Full mode.
         </div>
 
         <div class="scanStage crosshair" id="scanStage">
@@ -150,7 +152,6 @@
       </div>
     </div>
 
-    <!-- RELICS filter row -->
     <div class="modalFilterRow" id="relicFilterRow">
       <div class="seg" role="group" aria-label="Filter relics by vault status">
         <button id="rfAll" class="segBtn active" type="button">All</button>
@@ -160,7 +161,6 @@
       <div class="modalFilterHint muted small" id="vaultHint"></div>
     </div>
 
-    <!-- ITEMS controls -->
     <div class="modalFilterRow hidden" id="itemFilterRow">
       <div class="itemFilterStack">
         <div class="itemTopRow">
