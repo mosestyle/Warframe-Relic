@@ -212,16 +212,13 @@
     const lines = splitCleanLines(rawText);
     const candidates = new Set();
 
-    // whole cleaned text
     const whole = cleanOcrText(rawText);
     if (whole) candidates.add(whole);
 
-    // individual lines
     for (const line of lines) {
       if (line) candidates.add(line);
     }
 
-    // join adjacent lines
     for (let i = 0; i < lines.length; i++) {
       const a = lines[i];
       if (!a) continue;
@@ -236,7 +233,6 @@
       }
     }
 
-    // extract item-like suffixes from candidate lines
     const expanded = new Set([...candidates]);
     for (const cand of [...candidates]) {
       const words = normalizeText(cand).split(" ").filter(Boolean);
@@ -248,16 +244,14 @@
       }
     }
 
-    // keep only item-like or reasonably sized candidates
     const finalList = [...expanded]
       .map(s => normalizeText(s))
       .filter(Boolean)
       .filter(s => hasItemishWord(s) || tokenCount(s) >= 3);
 
-    // prefer more item-like / compact phrases
     finalList.sort((a, b) => {
-      const ai = (hasItemishWord(a) ? 1 : 0);
-      const bi = (hasItemishWord(b) ? 1 : 0);
+      const ai = hasItemishWord(a) ? 1 : 0;
+      const bi = hasItemishWord(b) ? 1 : 0;
       if (bi !== ai) return bi - ai;
       return a.length - b.length;
     });
@@ -271,10 +265,8 @@
 
     if (!words.length) return [];
 
-    // original phrase
     out.add(words.join(" "));
 
-    // contiguous substrings length 2..6
     for (let len = Math.min(6, words.length); len >= 2; len--) {
       for (let i = 0; i + len <= words.length; i++) {
         const sub = words.slice(i, i + len).join(" ");
@@ -282,7 +274,6 @@
       }
     }
 
-    // suffixes
     for (let i = 0; i < words.length; i++) {
       const sub = words.slice(i).join(" ");
       if ((hasItemishWord(sub) || tokenCount(sub) >= 2) && tokenCount(sub) <= 6) {
@@ -327,6 +318,7 @@
     const clearBtn = document.getElementById(options.clearBtnId);
     const modeTapBtn = document.getElementById(options.modeTapId);
     const modeWideBtn = document.getElementById(options.modeWideId);
+    const modeFullBtn = document.getElementById("scanModeFull");
     const stageWrap = document.getElementById(options.stageWrapId);
     const stage = document.getElementById(options.stageId);
     const canvas = document.getElementById(options.canvasId);
@@ -353,7 +345,7 @@
     let renderW = 0;
     let renderH = 0;
 
-    let mode = "tap";
+    let mode = "tap"; // tap | wide | full
     let tapRects = [];
     let wideRect = null;
     let cropCanvases = [null, null, null, null];
@@ -381,15 +373,16 @@
 
     function setHint() {
       if (!hintEl) return;
-      hintEl.textContent = mode === "tap"
-        ? "Tap 4 reward cards."
-        : "Drag one wide box across the reward text row.";
+      if (mode === "tap") hintEl.textContent = "Tap 4 reward cards.";
+      else if (mode === "wide") hintEl.textContent = "Drag one box across the reward text row. It will be split into 4 crops.";
+      else hintEl.textContent = "Drag one box across the reward text row. Full mode OCRs the whole box as one block.";
     }
 
     function setMode(nextMode) {
-      mode = nextMode === "wide" ? "wide" : "tap";
+      mode = nextMode === "wide" ? "wide" : nextMode === "full" ? "full" : "tap";
       modeTapBtn?.classList.toggle("active", mode === "tap");
       modeWideBtn?.classList.toggle("active", mode === "wide");
+      modeFullBtn?.classList.toggle("active", mode === "full");
       setHint();
       clearSelectionOnly();
       redraw();
@@ -534,16 +527,18 @@
       overlayCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
       overlayCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
 
-      const colW = rect.w / 4;
-      overlayCtx.strokeStyle = "rgba(65,210,122,0.9)";
-      for (let i = 1; i < 4; i++) {
-        const x = rect.x + colW * i;
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(x, rect.y);
-        overlayCtx.lineTo(x, rect.y + rect.h);
-        overlayCtx.stroke();
+      if (mode !== "full") {
+        const colW = rect.w / 4;
+        overlayCtx.strokeStyle = "rgba(65,210,122,0.9)";
+        for (let i = 1; i < 4; i++) {
+          const x = rect.x + colW * i;
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(x, rect.y);
+          overlayCtx.lineTo(x, rect.y + rect.h);
+          overlayCtx.stroke();
+        }
+        overlayCtx.strokeStyle = "#41d27a";
       }
-      overlayCtx.strokeStyle = "#41d27a";
 
       drawHandle(rect.x, rect.y);
       drawHandle(rect.x + rect.w, rect.y);
@@ -655,6 +650,27 @@
       updateCropPreviews();
     }
 
+    function buildCropCanvasesFromFullRect() {
+      cropCanvases = [null, null, null, null];
+      if (!wideRect || wideRect.w < 20 || wideRect.h < 20) {
+        updateCropPreviews();
+        return;
+      }
+
+      // preview only: split into 4 equal slices so user still sees Crop 1-4
+      const colW = wideRect.w / 4;
+      for (let i = 0; i < 4; i++) {
+        const rect = {
+          x: wideRect.x + colW * i,
+          y: wideRect.y,
+          w: colW,
+          h: wideRect.h
+        };
+        cropCanvases[i] = cropFromDisplayedRect(rect, "fullPreview");
+      }
+      updateCropPreviews();
+    }
+
     function cropFromDisplayedRect(rect, cropMode) {
       if (!imageBitmap) return null;
 
@@ -673,13 +689,17 @@
         const trimTop = crop.height * 0.18;
         const trimBottom = crop.height * 0.18;
         const trimmedH = crop.height - trimTop - trimBottom;
-
         if (trimmedH > 20) {
           crop = cropCanvas(crop, 0, trimTop, crop.width, trimmedH);
         }
       }
 
       return crop;
+    }
+
+    function getFullModeWholeCrop() {
+      if (!wideRect || !imageBitmap) return null;
+      return cropFromDisplayedRect(wideRect, "full");
     }
 
     function updateCropPreviews() {
@@ -811,11 +831,136 @@
       } : null;
     }
 
+    function collectFullModeMatches(rawText, rewardPool) {
+      const normWhole = cleanOcrText(rawText);
+      const phraseCandidates = buildPhraseCandidates(rawText);
+      const allCandidates = new Set([normWhole]);
+
+      for (const phrase of phraseCandidates) {
+        allCandidates.add(phrase);
+        for (const sub of buildSubstringCandidates(phrase)) {
+          allCandidates.add(sub);
+        }
+      }
+
+      const found = [];
+
+      for (const entry of rewardPool) {
+        let bestScore = 0;
+        let bestPhrase = "";
+
+        for (const cand of allCandidates) {
+          if (!cand) continue;
+          let score = stringScore(cand, entry.item);
+          const normItem = normalizeText(entry.item);
+          const clean = normalizeText(cand);
+
+          if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
+            score = Math.max(score, 0.80);
+          }
+          if (
+            clean.includes("mirage") &&
+            clean.includes("blueprint") &&
+            (clean.includes("chassis") || clean.includes("hassis") || clean.includes("assis")) &&
+            normItem.includes("mirage prime chassis blueprint")
+          ) {
+            score = Math.max(score, 0.82);
+          }
+          if (clean.includes("ash prime blueprint") && normItem === "ash prime blueprint") {
+            score = Math.max(score, 0.84);
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestPhrase = clean;
+          }
+        }
+
+        if (bestScore >= 0.46) {
+          found.push({
+            ...entry,
+            score: bestScore,
+            ocrText: bestPhrase
+          });
+        }
+      }
+
+      found.sort((a, b) =>
+        b.score - a.score ||
+        (b.plat ?? -1) - (a.plat ?? -1) ||
+        a.item.localeCompare(b.item)
+      );
+
+      return found.slice(0, 4);
+    }
+
+    async function analyzeFullMode(rewardPool) {
+      const wholeCrop = getFullModeWholeCrop();
+      if (!wholeCrop) {
+        setStatus("Draw a Full mode box first.");
+        return;
+      }
+
+      const debugParts = [];
+
+      const thresholded = upscaleCanvas(thresholdCanvas(wholeCrop, 150, 90), 2);
+      const plain = upscaleCanvas(wholeCrop, 2);
+
+      const textA = await runOCR(thresholded, setStatus, "fullA");
+      let matchesA = collectFullModeMatches(textA, rewardPool);
+
+      let textB = "";
+      let matchesB = [];
+
+      if (matchesA.length < 2) {
+        textB = await runOCR(plain, setStatus, "fullB");
+        matchesB = collectFullModeMatches(textB, rewardPool);
+      }
+
+      const chosen = matchesB.length > matchesA.length ? matchesB : matchesA;
+      const chosenText = matchesB.length > matchesA.length ? textB : textA;
+
+      debugParts.push(
+        `FULL MODE OCR A:\n${textA.trim() || "(none)"}\n\n` +
+        `FULL MODE CLEAN A:\n${cleanOcrText(textA) || "(none)"}\n\n` +
+        `FULL MODE MATCHES A:\n${matchesA.length ? matchesA.map(x => `${x.item} (${Math.round(x.score * 100)}%)`).join("\n") : "(none)"}\n\n` +
+        `FULL MODE OCR B:\n${textB ? textB.trim() : "(not used)"}\n\n` +
+        `FULL MODE CLEAN B:\n${textB ? (cleanOcrText(textB) || "(none)") : "(not used)"}\n\n` +
+        `FULL MODE MATCHES B:\n${matchesB.length ? matchesB.map(x => `${x.item} (${Math.round(x.score * 100)}%)`).join("\n") : textB ? "(none)" : "(not used)"}\n` +
+        `----------------------------------------`
+      );
+
+      const finalMatches = chosen
+        .sort((a, b) =>
+          (b.plat ?? -1) - (a.plat ?? -1) ||
+          b.score - a.score ||
+          a.item.localeCompare(b.item)
+        )
+        .slice(0, 4)
+        .map((m, i) => ({
+          ...m,
+          medal: i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : ""
+        }));
+
+      renderScanResults(resultsEl, finalMatches);
+
+      if (debugText) debugText.textContent = debugParts.join("\n\n");
+      debugWrap?.classList.remove("hidden");
+      debugActionRow?.classList.remove("hidden");
+
+      setStatus(finalMatches.length ? "Full mode scan complete." : "Full mode scan complete — no confident matches.");
+    }
+
     async function analyzeCrops() {
       const rewardPool = getRewardPoolSafe();
 
       if (!rewardPool.length) {
         setStatus("Select at least 1 relic in the relic picker above, then press Analyze crops.");
+        return;
+      }
+
+      if (mode === "full") {
+        await analyzeFullMode(rewardPool);
         return;
       }
 
@@ -889,7 +1034,9 @@
       clearSelectionOnly();
       redraw();
       setHint();
-      setStatus(mode === "tap" ? "Tap 4 reward cards." : "Drag one wide box across the reward text row.");
+      if (mode === "tap") setStatus("Tap 4 reward cards.");
+      else if (mode === "wide") setStatus("Drag one box across the reward text row.");
+      else setStatus("Drag one box across the reward text row for Full mode.");
     }
 
     function setStageCursorClass(cls) {
@@ -918,7 +1065,7 @@
       pointerState.offsetY = 0;
       pointerState.tapIndex = -1;
 
-      if (mode === "wide") {
+      if (mode === "wide" || mode === "full") {
         if (wideRect) {
           const handle = getRectHandle(p.x, p.y, wideRect);
           if (handle) {
@@ -998,7 +1145,7 @@
         pointerState.moved = true;
       }
 
-      if (mode === "wide") {
+      if (mode === "wide" || mode === "full") {
         if (pointerState.action === "move" && wideRect) {
           wideRect = clampRect({
             x: p.x - pointerState.offsetX,
@@ -1066,7 +1213,7 @@
         return;
       }
 
-      if (mode === "wide") {
+      if (mode === "wide" || mode === "full") {
         if (pointerState.action === "draw") {
           const rect = normalizeRect(
             pointerState.startX,
@@ -1079,20 +1226,22 @@
             pointerState.active = false;
             setStageCursorClass("");
             redraw();
-            setStatus("Wide-box too small. Try again.");
+            setStatus("Box too small. Try again.");
             return;
           }
 
           wideRect = snapWideRectToTextBand(clampRect(rect));
-          buildCropCanvasesFromWideRect();
+          if (mode === "wide") buildCropCanvasesFromWideRect();
+          else buildCropCanvasesFromFullRect();
           redraw();
-          setStatus("Wide-box captured. Now press Analyze crops.");
+          setStatus(mode === "wide" ? "Wide-box captured. Now press Analyze crops." : "Full mode box captured. Now press Analyze crops.");
         } else if (pointerState.action === "move" || pointerState.action === "resize") {
           if (wideRect) {
             wideRect = snapWideRectToTextBand(clampRect(wideRect));
-            buildCropCanvasesFromWideRect();
+            if (mode === "wide") buildCropCanvasesFromWideRect();
+            else buildCropCanvasesFromFullRect();
             redraw();
-            setStatus("Wide-box adjusted. Now press Analyze crops.");
+            setStatus(mode === "wide" ? "Wide-box adjusted. Now press Analyze crops." : "Full mode box adjusted. Now press Analyze crops.");
           }
         }
 
@@ -1105,6 +1254,7 @@
     clearBtn?.addEventListener("click", clearAll);
     modeTapBtn?.addEventListener("click", () => setMode("tap"));
     modeWideBtn?.addEventListener("click", () => setMode("wide"));
+    modeFullBtn?.addEventListener("click", () => setMode("full"));
 
     runBtn?.addEventListener("click", () => {
       analyzeCrops().catch((err) => {
@@ -1148,6 +1298,8 @@
         buildCropCanvasesFromTap();
       } else if (mode === "wide" && wideRect) {
         buildCropCanvasesFromWideRect();
+      } else if (mode === "full" && wideRect) {
+        buildCropCanvasesFromFullRect();
       }
     });
 
