@@ -345,7 +345,7 @@
     let renderW = 0;
     let renderH = 0;
 
-    let mode = "tap"; // tap | wide | full
+    let mode = "full"; // full | wide | tap
     let tapRects = [];
     let wideRect = null;
     let cropCanvases = [null, null, null, null];
