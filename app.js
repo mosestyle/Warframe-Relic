@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 // Save/restore scroll position for Items list
 let ITEM_LIST_SCROLL_TOP = 0;
 
+// Scanner instance
 let SCREEN_SCANNER = null;
 
 function setStatus(msg) {
@@ -224,7 +225,7 @@ function buildItemIndex() {
   ITEM_TO_RELICS = map;
 }
 
-// ---------------- Scan reward pool ----------------
+// ---------------- Scanner reward pool helpers ----------------
 function getCurrentRewardPool() {
   const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
   if (picks.length === 0) return [];
@@ -233,13 +234,13 @@ function getCurrentRewardPool() {
     .map(name => RELICS.find(r => relicDisplayName(r) === name))
     .filter(Boolean);
 
-  if (!relicsPicked.length) return [];
+  if (relicsPicked.length === 0) return [];
 
-  return mergeAndSortRewards(relicsPicked).map(r => ({
-    item: r.item,
-    plat: r.plat,
-    rarity: r.rarity,
-    from: r.from
+  return mergeAndSortRewards(relicsPicked).map(entry => ({
+    item: entry.item,
+    from: entry.from,
+    rarity: entry.rarity,
+    plat: entry.plat
   }));
 }
 
@@ -522,6 +523,7 @@ function renderModalList(filter, options = {}) {
 
     const allItems = [...ITEM_TO_RELICS.values()];
 
+    // TOP PLATINUM MODE
     if (ITEM_TOP_MODE) {
       let matches = allItems
         .filter(info => itemPassesTopFilter(info))
@@ -577,6 +579,7 @@ function renderModalList(filter, options = {}) {
       return;
     }
 
+    // NORMAL ITEMS SEARCH
     updateItemHint();
 
     if (!q) {
