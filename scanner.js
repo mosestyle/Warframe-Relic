@@ -319,6 +319,8 @@
     const modeTapBtn = document.getElementById(options.modeTapId);
     const modeWideBtn = document.getElementById(options.modeWideId);
     const modeFullBtn = document.getElementById("scanModeFull");
+    const cameraBtn = document.getElementById("scanCameraBtn");
+    const cameraInput = document.getElementById("scanCameraInput");
     const stageWrap = document.getElementById(options.stageWrapId);
     const stage = document.getElementById(options.stageId);
     const canvas = document.getElementById(options.canvasId);
@@ -425,6 +427,7 @@
 
     function clearAll() {
       if (fileInput) fileInput.value = "";
+      if (cameraInput) cameraInput.value = "";
       image = null;
       imageBitmap = null;
       renderW = 0;
@@ -435,7 +438,7 @@
       overlay.height = 1;
       stageWrap?.classList.add("hidden");
       clearSelectionOnly();
-      setStatus("Pick relics, then upload a screenshot.");
+      setStatus("Pick relics, then upload a screenshot or take a photo.");
     }
 
     function getRewardPoolSafe() {
@@ -657,7 +660,6 @@
         return;
       }
 
-      // preview only: split into 4 equal slices so user still sees Crop 1-4
       const colW = wideRect.w / 4;
       for (let i = 0; i < 4; i++) {
         const rect = {
@@ -918,7 +920,6 @@
       }
 
       const chosen = matchesB.length > matchesA.length ? matchesB : matchesA;
-      const chosenText = matchesB.length > matchesA.length ? textB : textA;
 
       debugParts.push(
         `FULL MODE OCR A:\n${textA.trim() || "(none)"}\n\n` +
@@ -1025,7 +1026,7 @@
       }
     }
 
-    async function loadImage(file) {
+    async function loadImageFromFile(file) {
       image = await fileToImage(file);
       imageBitmap = image;
 
@@ -1251,6 +1252,7 @@
     }
 
     uploadBtn?.addEventListener("click", () => fileInput?.click());
+    cameraBtn?.addEventListener("click", () => cameraInput?.click());
     clearBtn?.addEventListener("click", clearAll);
     modeTapBtn?.addEventListener("click", () => setMode("tap"));
     modeWideBtn?.addEventListener("click", () => setMode("wide"));
@@ -1274,10 +1276,21 @@
       const file = evt.target.files?.[0];
       if (!file) return;
       try {
-        await loadImage(file);
+        await loadImageFromFile(file);
       } catch (err) {
         console.error(err);
         setStatus("Could not load image.");
+      }
+    });
+
+    cameraInput?.addEventListener("change", async (evt) => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await loadImageFromFile(file);
+      } catch (err) {
+        console.error(err);
+        setStatus("Could not load photo.");
       }
     });
 
