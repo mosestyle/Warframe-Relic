@@ -13,6 +13,8 @@ const $ = (id) => document.getElementById(id);
 // Save/restore scroll position for Items list
 let ITEM_LIST_SCROLL_TOP = 0;
 
+let SCREEN_SCANNER = null;
+
 function setStatus(msg) {
   const el = $("status");
   if (el) el.textContent = msg || "";
@@ -220,6 +222,51 @@ function buildItemIndex() {
   }
 
   ITEM_TO_RELICS = map;
+}
+
+// ---------------- Scan reward pool ----------------
+function getCurrentRewardPool() {
+  const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
+  if (picks.length === 0) return [];
+
+  const relicsPicked = picks
+    .map(name => RELICS.find(r => relicDisplayName(r) === name))
+    .filter(Boolean);
+
+  if (!relicsPicked.length) return [];
+
+  return mergeAndSortRewards(relicsPicked).map(r => ({
+    item: r.item,
+    plat: r.plat,
+    rarity: r.rarity,
+    from: r.from
+  }));
+}
+
+function initScreenScanner() {
+  if (typeof window.createScreenScanner !== "function") return;
+
+  SCREEN_SCANNER = window.createScreenScanner({
+    fileInputId: "scanFileInput",
+    uploadBtnId: "scanUploadBtn",
+    clearBtnId: "scanClearBtn",
+    modeTapId: "scanModeTap",
+    modeWideId: "scanModeWide",
+    stageWrapId: "scanStageWrap",
+    stageId: "scanStage",
+    canvasId: "scanCanvas",
+    overlayId: "scanOverlay",
+    hintId: "scanHint",
+    statusId: "scanStatus",
+    previewsWrapId: "scanPreviews",
+    previewIds: ["scanPreview1", "scanPreview2", "scanPreview3", "scanPreview4"],
+    runBtnId: "scanRunBtn",
+    actionRowId: "scanActionRow",
+    resultsId: "scanResults",
+    debugWrapId: "scanDebugWrap",
+    debugTextId: "scanDebugText",
+    getRewardPool: getCurrentRewardPool
+  });
 }
 
 // ---------------- Modal picker + modes ----------------
@@ -475,7 +522,6 @@ function renderModalList(filter, options = {}) {
 
     const allItems = [...ITEM_TO_RELICS.values()];
 
-    // TOP PLATINUM MODE
     if (ITEM_TOP_MODE) {
       let matches = allItems
         .filter(info => itemPassesTopFilter(info))
@@ -531,7 +577,6 @@ function renderModalList(filter, options = {}) {
       return;
     }
 
-    // NORMAL ITEMS SEARCH
     updateItemHint();
 
     if (!q) {
@@ -736,6 +781,7 @@ async function boot() {
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
   buildItemIndex();
+  initScreenScanner();
 
   const footer = $("footer");
   if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
