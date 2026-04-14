@@ -208,29 +208,6 @@
     );
   }
 
-  function hasStrongRootWord(s) {
-    const x = normalizeText(s);
-    const stop = new Set([
-      "prime",
-      "blueprint",
-      "systems",
-      "system",
-      "neuroptics",
-      "chassis",
-      "cerebrum",
-      "receiver",
-      "barrel",
-      "handle",
-      "carapace",
-      "gauntlet",
-      "grip",
-      "collar",
-      "stock"
-    ]);
-    const words = x.split(" ").filter(Boolean);
-    return words.some(w => !stop.has(w) && w.length >= 4);
-  }
-
   function buildPhraseCandidates(rawText) {
     const lines = splitCleanLines(rawText);
     const candidates = new Set();
@@ -593,23 +570,6 @@
       return r;
     }
 
-    function getDisplayRectFromStoredRect(rect) {
-      if (!rect) return null;
-      if (mode === "full") return clampRect(rect);
-
-      const top = rect.h * 0.10;
-      const bottom = rect.h * 0.14;
-      const h = rect.h - top - bottom;
-      if (h <= 20) return clampRect(rect);
-
-      return clampRect({
-        x: rect.x,
-        y: rect.y + top,
-        w: rect.w,
-        h
-      });
-    }
-
     function getRelativePointerPos(evt) {
       const rect = canvas.getBoundingClientRect();
       return {
@@ -628,12 +588,10 @@
 
     function getRectHandle(x, y, rect) {
       if (!rect) return null;
-      const dr = getDisplayRectFromStoredRect(rect);
-      if (!dr) return null;
-      if (pointNear(x, y, dr.x, dr.y)) return "nw";
-      if (pointNear(x, y, dr.x + dr.w, dr.y)) return "ne";
-      if (pointNear(x, y, dr.x, dr.y + dr.h)) return "sw";
-      if (pointNear(x, y, dr.x + dr.w, dr.y + dr.h)) return "se";
+      if (pointNear(x, y, rect.x, rect.y)) return "nw";
+      if (pointNear(x, y, rect.x + rect.w, rect.y)) return "ne";
+      if (pointNear(x, y, rect.x, rect.y + rect.h)) return "sw";
+      if (pointNear(x, y, rect.x + rect.w, rect.y + rect.h)) return "se";
       return null;
     }
 
@@ -668,19 +626,13 @@
         return;
       }
 
-      const dr = getDisplayRectFromStoredRect(wideRect);
-      if (!dr) {
-        updateCropPreviews();
-        return;
-      }
-
-      const colW = dr.w / 4;
+      const colW = wideRect.w / 4;
       for (let i = 0; i < 4; i++) {
         const rect = {
-          x: dr.x + colW * i,
-          y: dr.y,
+          x: wideRect.x + colW * i,
+          y: wideRect.y,
           w: colW,
-          h: dr.h
+          h: wideRect.h
         };
         cropCanvases[i] = cropFromDisplayedRect(rect, "wide");
       }
@@ -740,23 +692,8 @@
         }
       });
 
-      previewsWrap?.classList.toggle("hidden", !any);
-      actionRow?.classList.toggle("hidden", !any);
-    }
-
-    function isWeakGenericBlueprintMatch(candidatePhrase, entryItem, score) {
-      const clean = normalizeText(candidatePhrase);
-      const normItem = normalizeText(entryItem);
-
-      const genericOnly =
-        clean === "blueprint" ||
-        clean.endsWith(" blueprint") ||
-        clean.includes(" blueprint ");
-
-      const weakRoot = !hasStrongRootWord(clean);
-      const itemNeedsRoot = normItem.includes("prime") || normItem.includes("blueprint");
-
-      return genericOnly && weakRoot && itemNeedsRoot && score < 0.80;
+      previewsWrap?.classList.toggle("hidden", mode === "full" ? true : !any);
+      actionRow?.classList.toggle("hidden", mode === "full" ? false : !any);
     }
 
     function getBestMatchForPool(ocrText, rewardPool) {
@@ -810,14 +747,6 @@
 
             if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
               score = Math.max(score, 0.82);
-            }
-
-            if (isWeakGenericBlueprintMatch(clean, entry.item, score)) {
-              continue;
-            }
-
-            if (!hasStrongRootWord(clean) && score < 0.72) {
-              continue;
             }
 
             if (score > bestScore) {
@@ -915,14 +844,6 @@
           }
           if (clean.includes("ash prime blueprint") && normItem === "ash prime blueprint") {
             score = Math.max(score, 0.84);
-          }
-
-          if (isWeakGenericBlueprintMatch(clean, entry.item, score)) {
-            continue;
-          }
-
-          if (!hasStrongRootWord(clean) && score < 0.72) {
-            continue;
           }
 
           if (score > bestScore) {
@@ -1125,8 +1046,7 @@
       pointerState.tapIndex = -1;
 
       if (mode === "wide" || mode === "full") {
-        const dr = getDisplayRectFromStoredRect(wideRect);
-        if (dr) {
+        if (wideRect) {
           const handle = getRectHandle(p.x, p.y, wideRect);
           if (handle) {
             pointerState.action = "resize";
@@ -1136,7 +1056,7 @@
             return;
           }
 
-          if (pointInRect(p.x, p.y, dr)) {
+          if (pointInRect(p.x, p.y, wideRect)) {
             pointerState.action = "move";
             pointerState.offsetX = p.x - wideRect.x;
             pointerState.offsetY = p.y - wideRect.y;
@@ -1168,12 +1088,10 @@
     }
 
     function applyResize(handle, originRect, p) {
-      const dr = getDisplayRectFromStoredRect(originRect) || originRect;
-
-      let x1 = dr.x;
-      let y1 = dr.y;
-      let x2 = dr.x + dr.w;
-      let y2 = dr.y + dr.h;
+      let x1 = originRect.x;
+      let y1 = originRect.y;
+      let x2 = originRect.x + originRect.w;
+      let y2 = originRect.y + originRect.h;
 
       if (handle === "nw") {
         x1 = p.x;
@@ -1189,22 +1107,7 @@
         y2 = p.y;
       }
 
-      const resizedDisplay = clampRect(normalizeRect(x1, y1, x2, y2));
-
-      if (mode === "full") {
-        return resizedDisplay;
-      }
-
-      const storedTop = resizedDisplay.h * 0.10;
-      const storedBottom = resizedDisplay.h * 0.14;
-      const storedH = resizedDisplay.h / (1 - 0.10 - 0.14);
-
-      return clampRect({
-        x: resizedDisplay.x,
-        y: resizedDisplay.y - storedTop,
-        w: resizedDisplay.w,
-        h: storedH
-      });
+      return clampRect(normalizeRect(x1, y1, x2, y2));
     }
 
     function onPointerMove(evt) {
