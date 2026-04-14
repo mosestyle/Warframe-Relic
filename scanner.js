@@ -208,6 +208,29 @@
     );
   }
 
+  function hasStrongRootWord(s) {
+    const x = normalizeText(s);
+    const stop = new Set([
+      "prime",
+      "blueprint",
+      "systems",
+      "system",
+      "neuroptics",
+      "chassis",
+      "cerebrum",
+      "receiver",
+      "barrel",
+      "handle",
+      "carapace",
+      "gauntlet",
+      "grip",
+      "collar",
+      "stock"
+    ]);
+    const words = x.split(" ").filter(Boolean);
+    return words.some(w => !stop.has(w) && w.length >= 4);
+  }
+
   function buildPhraseCandidates(rawText) {
     const lines = splitCleanLines(rawText);
     const candidates = new Set();
@@ -391,7 +414,7 @@
       if (!hintEl) return;
       if (mode === "tap") hintEl.textContent = "Tap 4 reward cards.";
       else if (mode === "wide") hintEl.textContent = "Drag one box across the reward text row. It will be split into 4 crops.";
-      else hintEl.textContent = "Drag one box across the reward text row. Full mode uses the same per-crop OCR style as Wide-box mode.";
+      else hintEl.textContent = "Drag one box across the reward text row. Full mode OCRs the whole box as one block.";
     }
 
     function setMode(nextMode) {
@@ -530,16 +553,18 @@
       overlayCtx.fillRect(rect.x, rect.y, rect.w, rect.h);
       overlayCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
 
-      const colW = rect.w / 4;
-      overlayCtx.strokeStyle = "rgba(65,210,122,0.9)";
-      for (let i = 1; i < 4; i++) {
-        const x = rect.x + colW * i;
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(x, rect.y);
-        overlayCtx.lineTo(x, rect.y + rect.h);
-        overlayCtx.stroke();
+      if (mode !== "full") {
+        const colW = rect.w / 4;
+        overlayCtx.strokeStyle = "rgba(65,210,122,0.9)";
+        for (let i = 1; i < 4; i++) {
+          const x = rect.x + colW * i;
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(x, rect.y);
+          overlayCtx.lineTo(x, rect.y + rect.h);
+          overlayCtx.stroke();
+        }
+        overlayCtx.strokeStyle = "#41d27a";
       }
-      overlayCtx.strokeStyle = "#41d27a";
 
       drawHandle(rect.x, rect.y);
       drawHandle(rect.x + rect.w, rect.y);
@@ -568,8 +593,10 @@
       return r;
     }
 
-    function snapWideRectToTextBand(rect) {
-      // softened snap compared to the old aggressive one
+    function getDisplayRectFromStoredRect(rect) {
+      if (!rect) return null;
+      if (mode === "full") return clampRect(rect);
+
       const top = rect.h * 0.10;
       const bottom = rect.h * 0.14;
       const h = rect.h - top - bottom;
@@ -601,10 +628,12 @@
 
     function getRectHandle(x, y, rect) {
       if (!rect) return null;
-      if (pointNear(x, y, rect.x, rect.y)) return "nw";
-      if (pointNear(x, y, rect.x + rect.w, rect.y)) return "ne";
-      if (pointNear(x, y, rect.x, rect.y + rect.h)) return "sw";
-      if (pointNear(x, y, rect.x + rect.w, rect.y + rect.h)) return "se";
+      const dr = getDisplayRectFromStoredRect(rect);
+      if (!dr) return null;
+      if (pointNear(x, y, dr.x, dr.y)) return "nw";
+      if (pointNear(x, y, dr.x + dr.w, dr.y)) return "ne";
+      if (pointNear(x, y, dr.x, dr.y + dr.h)) return "sw";
+      if (pointNear(x, y, dr.x + dr.w, dr.y + dr.h)) return "se";
       return null;
     }
 
@@ -639,31 +668,40 @@
         return;
       }
 
-      const colW = wideRect.w / 4;
+      const dr = getDisplayRectFromStoredRect(wideRect);
+      if (!dr) {
+        updateCropPreviews();
+        return;
+      }
+
+      const colW = dr.w / 4;
       for (let i = 0; i < 4; i++) {
         const rect = {
-          x: wideRect.x + colW * i,
-          y: wideRect.y,
+          x: dr.x + colW * i,
+          y: dr.y,
           w: colW,
-          h: wideRect.h
+          h: dr.h
         };
         cropCanvases[i] = cropFromDisplayedRect(rect, "wide");
       }
       updateCropPreviews();
     }
 
-    function buildCropCanvasesFromFullRect() {
-      // Full mode now uses the same internal 4-crop logic as Wide-box mode
-      buildCropCanvasesFromWideRect();
-    }
-
     function cropFromDisplayedRect(rect, cropMode) {
       if (!imageBitmap) return null;
 
-      const srcX = rect.x * displayScale;
-      const srcY = rect.y * displayScale;
-      const srcW = rect.w * displayScale;
-      const srcH = rect.h * displayScale;
+      let displayRect = { ...rect };
+
+      if (cropMode === "wide" || cropMode === "tap") {
+        const padX = rect.w * 0.08;
+        displayRect.x = Math.max(0, rect.x - padX);
+        displayRect.w = Math.min(renderW - displayRect.x, rect.w + padX * 2);
+      }
+
+      const srcX = displayRect.x * displayScale;
+      const srcY = displayRect.y * displayScale;
+      const srcW = displayRect.w * displayScale;
+      const srcH = displayRect.h * displayScale;
 
       const sourceCanvas = makeCanvas(image.width, image.height);
       const sctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
@@ -683,6 +721,11 @@
       return crop;
     }
 
+    function getFullModeWholeCrop() {
+      if (!wideRect || !imageBitmap) return null;
+      return cropFromDisplayedRect(wideRect, "full");
+    }
+
     function updateCropPreviews() {
       let any = false;
 
@@ -699,6 +742,21 @@
 
       previewsWrap?.classList.toggle("hidden", !any);
       actionRow?.classList.toggle("hidden", !any);
+    }
+
+    function isWeakGenericBlueprintMatch(candidatePhrase, entryItem, score) {
+      const clean = normalizeText(candidatePhrase);
+      const normItem = normalizeText(entryItem);
+
+      const genericOnly =
+        clean === "blueprint" ||
+        clean.endsWith(" blueprint") ||
+        clean.includes(" blueprint ");
+
+      const weakRoot = !hasStrongRootWord(clean);
+      const itemNeedsRoot = normItem.includes("prime") || normItem.includes("blueprint");
+
+      return genericOnly && weakRoot && itemNeedsRoot && score < 0.80;
     }
 
     function getBestMatchForPool(ocrText, rewardPool) {
@@ -752,6 +810,14 @@
 
             if (clean.includes("systems blueprint") && clean.includes("wukong") && normItem.includes("wukong prime systems blueprint")) {
               score = Math.max(score, 0.82);
+            }
+
+            if (isWeakGenericBlueprintMatch(clean, entry.item, score)) {
+              continue;
+            }
+
+            if (!hasStrongRootWord(clean) && score < 0.72) {
+              continue;
             }
 
             if (score > bestScore) {
@@ -812,6 +878,133 @@
       } : null;
     }
 
+    function collectFullModeMatches(rawText, rewardPool) {
+      const normWhole = cleanOcrText(rawText);
+      const phraseCandidates = buildPhraseCandidates(rawText);
+      const allCandidates = new Set([normWhole]);
+
+      for (const phrase of phraseCandidates) {
+        allCandidates.add(phrase);
+        for (const sub of buildSubstringCandidates(phrase)) {
+          allCandidates.add(sub);
+        }
+      }
+
+      const found = [];
+
+      for (const entry of rewardPool) {
+        let bestScore = 0;
+        let bestPhrase = "";
+
+        for (const cand of allCandidates) {
+          if (!cand) continue;
+          let score = stringScore(cand, entry.item);
+          const normItem = normalizeText(entry.item);
+          const clean = normalizeText(cand);
+
+          if (clean.includes("kong prime systems") && normItem.includes("wukong prime systems blueprint")) {
+            score = Math.max(score, 0.80);
+          }
+          if (
+            clean.includes("mirage") &&
+            clean.includes("blueprint") &&
+            (clean.includes("chassis") || clean.includes("hassis") || clean.includes("assis")) &&
+            normItem.includes("mirage prime chassis blueprint")
+          ) {
+            score = Math.max(score, 0.82);
+          }
+          if (clean.includes("ash prime blueprint") && normItem === "ash prime blueprint") {
+            score = Math.max(score, 0.84);
+          }
+
+          if (isWeakGenericBlueprintMatch(clean, entry.item, score)) {
+            continue;
+          }
+
+          if (!hasStrongRootWord(clean) && score < 0.72) {
+            continue;
+          }
+
+          if (score > bestScore) {
+            bestScore = score;
+            bestPhrase = clean;
+          }
+        }
+
+        if (bestScore >= 0.46) {
+          found.push({
+            ...entry,
+            score: bestScore,
+            ocrText: bestPhrase
+          });
+        }
+      }
+
+      found.sort((a, b) =>
+        b.score - a.score ||
+        (b.plat ?? -1) - (a.plat ?? -1) ||
+        a.item.localeCompare(b.item)
+      );
+
+      return found.slice(0, 4);
+    }
+
+    async function analyzeFullMode(rewardPool) {
+      const wholeCrop = getFullModeWholeCrop();
+      if (!wholeCrop) {
+        setStatus("Draw a Full mode box first.");
+        return;
+      }
+
+      const debugParts = [];
+
+      const thresholded = upscaleCanvas(thresholdCanvas(wholeCrop, 150, 90), 2);
+      const plain = upscaleCanvas(wholeCrop, 2);
+
+      const textA = await runOCR(thresholded, setStatus, "fullA");
+      let matchesA = collectFullModeMatches(textA, rewardPool);
+
+      let textB = "";
+      let matchesB = [];
+
+      if (matchesA.length < 2) {
+        textB = await runOCR(plain, setStatus, "fullB");
+        matchesB = collectFullModeMatches(textB, rewardPool);
+      }
+
+      const chosen = matchesB.length > matchesA.length ? matchesB : matchesA;
+
+      debugParts.push(
+        `FULL MODE OCR A:\n${textA.trim() || "(none)"}\n\n` +
+        `FULL MODE CLEAN A:\n${cleanOcrText(textA) || "(none)"}\n\n` +
+        `FULL MODE MATCHES A:\n${matchesA.length ? matchesA.map(x => `${x.item} (${Math.round(x.score * 100)}%)`).join("\n") : "(none)"}\n\n` +
+        `FULL MODE OCR B:\n${textB ? textB.trim() : "(not used)"}\n\n` +
+        `FULL MODE CLEAN B:\n${textB ? (cleanOcrText(textB) || "(none)") : "(not used)"}\n\n` +
+        `FULL MODE MATCHES B:\n${matchesB.length ? matchesB.map(x => `${x.item} (${Math.round(x.score * 100)}%)`).join("\n") : textB ? "(none)" : "(not used)"}\n` +
+        `----------------------------------------`
+      );
+
+      const finalMatches = chosen
+        .sort((a, b) =>
+          (b.plat ?? -1) - (a.plat ?? -1) ||
+          b.score - a.score ||
+          a.item.localeCompare(b.item)
+        )
+        .slice(0, 4)
+        .map((m, i) => ({
+          ...m,
+          medal: i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : ""
+        }));
+
+      renderScanResults(resultsEl, finalMatches);
+
+      if (debugText) debugText.textContent = debugParts.join("\n\n");
+      debugWrap?.classList.remove("hidden");
+      debugActionRow?.classList.remove("hidden");
+
+      setStatus(finalMatches.length ? "Full mode scan complete." : "Full mode scan complete — no confident matches.");
+    }
+
     async function analyzeCrops() {
       const rewardPool = getRewardPoolSafe();
 
@@ -820,9 +1013,14 @@
         return;
       }
 
+      if (mode === "full") {
+        await analyzeFullMode(rewardPool);
+        return;
+      }
+
       const validCrops = cropCanvases.filter(Boolean);
       if (!validCrops.length) {
-        setStatus(mode === "tap" ? "Create tap crops first." : "Create a selection box first.");
+        setStatus("Create tap crops or a wide-box first.");
         return;
       }
 
@@ -927,7 +1125,8 @@
       pointerState.tapIndex = -1;
 
       if (mode === "wide" || mode === "full") {
-        if (wideRect) {
+        const dr = getDisplayRectFromStoredRect(wideRect);
+        if (dr) {
           const handle = getRectHandle(p.x, p.y, wideRect);
           if (handle) {
             pointerState.action = "resize";
@@ -937,7 +1136,7 @@
             return;
           }
 
-          if (pointInRect(p.x, p.y, wideRect)) {
+          if (pointInRect(p.x, p.y, dr)) {
             pointerState.action = "move";
             pointerState.offsetX = p.x - wideRect.x;
             pointerState.offsetY = p.y - wideRect.y;
@@ -969,10 +1168,12 @@
     }
 
     function applyResize(handle, originRect, p) {
-      let x1 = originRect.x;
-      let y1 = originRect.y;
-      let x2 = originRect.x + originRect.w;
-      let y2 = originRect.y + originRect.h;
+      const dr = getDisplayRectFromStoredRect(originRect) || originRect;
+
+      let x1 = dr.x;
+      let y1 = dr.y;
+      let x2 = dr.x + dr.w;
+      let y2 = dr.y + dr.h;
 
       if (handle === "nw") {
         x1 = p.x;
@@ -988,7 +1189,22 @@
         y2 = p.y;
       }
 
-      return clampRect(normalizeRect(x1, y1, x2, y2));
+      const resizedDisplay = clampRect(normalizeRect(x1, y1, x2, y2));
+
+      if (mode === "full") {
+        return resizedDisplay;
+      }
+
+      const storedTop = resizedDisplay.h * 0.10;
+      const storedBottom = resizedDisplay.h * 0.14;
+      const storedH = resizedDisplay.h / (1 - 0.10 - 0.14);
+
+      return clampRect({
+        x: resizedDisplay.x,
+        y: resizedDisplay.y - storedTop,
+        w: resizedDisplay.w,
+        h: storedH
+      });
     }
 
     function onPointerMove(evt) {
@@ -1036,7 +1252,7 @@
 
         rect.x = Math.max(0, Math.min(renderW - rect.w, p.x - pointerState.offsetX));
         rect.y = Math.max(0, Math.min(renderH - rect.h, p.y - pointerState.offsetY));
-        redraw(); // smoother: no crop rebuild on every move
+        redraw();
       }
     }
 
@@ -1090,16 +1306,16 @@
             return;
           }
 
-          wideRect = snapWideRectToTextBand(clampRect(rect));
+          wideRect = clampRect(rect);
           if (mode === "wide") buildCropCanvasesFromWideRect();
-          else buildCropCanvasesFromFullRect();
+          else updateCropPreviews();
           redraw();
           setStatus(mode === "wide" ? "Wide-box captured. Now press Analyze crops." : "Full mode captured. Now press Analyze crops.");
         } else if (pointerState.action === "move" || pointerState.action === "resize") {
           if (wideRect) {
-            wideRect = snapWideRectToTextBand(clampRect(wideRect));
+            wideRect = clampRect(wideRect);
             if (mode === "wide") buildCropCanvasesFromWideRect();
-            else buildCropCanvasesFromFullRect();
+            else updateCropPreviews();
             redraw();
             setStatus(mode === "wide" ? "Wide-box adjusted. Now press Analyze crops." : "Full mode adjusted. Now press Analyze crops.");
           }
@@ -1168,9 +1384,10 @@
       redraw();
       if (mode === "tap" && tapRects.length) {
         buildCropCanvasesFromTap();
-      } else if ((mode === "wide" || mode === "full") && wideRect) {
-        if (mode === "wide") buildCropCanvasesFromWideRect();
-        else buildCropCanvasesFromFullRect();
+      } else if (mode === "wide" && wideRect) {
+        buildCropCanvasesFromWideRect();
+      } else if (mode === "full" && wideRect) {
+        updateCropPreviews();
       }
     });
 
