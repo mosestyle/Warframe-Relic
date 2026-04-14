@@ -463,3 +463,13 @@ button.ghost { background: transparent; }
 .scanStage.crosshair{
   cursor:crosshair;
 }
+
+/* Reward list A-Z selectable mode */
+.cardRow.clickable {
+  cursor: pointer;
+}
+
+.cardRow.selectedReward {
+  background: rgba(65, 210, 122, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(65, 210, 122, 0.45);
+}
