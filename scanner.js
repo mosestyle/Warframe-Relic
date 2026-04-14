@@ -391,7 +391,7 @@
       if (!hintEl) return;
       if (mode === "tap") hintEl.textContent = "Tap 4 reward cards.";
       else if (mode === "wide") hintEl.textContent = "Drag one box across the reward text row. It will be split into 4 crops.";
-      else hintEl.textContent = "Drag one box across the reward text row. Full mode OCRs the whole box as one block.";
+      else hintEl.textContent = "Drag one box across the reward text row. Full mode OCRs the whole box as one block, with the same OCR A/B pass style.";
     }
 
     function setMode(nextMode) {
@@ -399,8 +399,8 @@
       modeTapBtn?.classList.toggle("active", mode === "tap");
       modeWideBtn?.classList.toggle("active", mode === "wide");
       modeFullBtn?.classList.toggle("active", mode === "full");
-      setHint();
       clearSelectionOnly();
+      setHint();
       redraw();
     }
 
@@ -413,6 +413,7 @@
 
     function clearSelectionOnly() {
       tapRects = [];
+      cropCanvases = [null, null, null, null];
       pointerState = {
         active: false,
         startX: 0,
@@ -428,7 +429,11 @@
         tapIndex: -1
       };
       wideRect = null;
-      clearPreviewImages();
+
+      previewEls.forEach(img => img.removeAttribute("src"));
+      previewsWrap?.classList.add("hidden");
+      actionRow?.classList.add("hidden");
+
       if (resultsEl) {
         resultsEl.innerHTML = "";
         resultsEl.classList.add("hidden");
@@ -508,12 +513,10 @@
 
           overlayCtx.fillStyle = "rgba(65,210,122,0.15)";
         });
-      } else {
-        const rect = pointerState.active && pointerState.action === "draw"
-          ? normalizeRect(pointerState.startX, pointerState.startY, pointerState.currentX, pointerState.currentY)
-          : wideRect;
-
-        if (rect) drawWideRect(rect);
+      } else if (wideRect) {
+        drawWideRect(wideRect);
+      } else if (pointerState.active && pointerState.action === "draw") {
+        drawWideRect(normalizeRect(pointerState.startX, pointerState.startY, pointerState.currentX, pointerState.currentY));
       }
     }
 
@@ -692,7 +695,7 @@
         }
       });
 
-      previewsWrap?.classList.toggle("hidden", mode === "full" ? true : !any);
+      previewsWrap?.classList.toggle("hidden", !any);
       actionRow?.classList.toggle("hidden", mode === "full" ? false : !any);
     }
 
