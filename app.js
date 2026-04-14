@@ -20,6 +20,7 @@ let SCREEN_SCANNER = null;
 let REWARD_VIEW_MODE = "plat"; // "plat" | "alpha"
 let CURRENT_REWARDS = [];
 let SELECTED_REWARD_ITEMS = new Set();
+let HIDE_LOW_PLAT_IN_ALPHA = false;
 
 function setStatus(msg) {
   const el = $("status");
@@ -726,14 +727,20 @@ function rewardSelectedCompare(a, b) {
 }
 
 function getDisplayedRewards(list) {
+  let baseList = [...list];
+
+  if (REWARD_VIEW_MODE === "alpha" && HIDE_LOW_PLAT_IN_ALPHA) {
+    baseList = baseList.filter(item => item.plat >= 5);
+  }
+
   if (REWARD_VIEW_MODE === "plat") {
-    return [...list].sort((a, b) => b.plat - a.plat || a.item.localeCompare(b.item, undefined, { sensitivity: "base" }));
+    return baseList.sort((a, b) => b.plat - a.plat || a.item.localeCompare(b.item, undefined, { sensitivity: "base" }));
   }
 
   const selected = [];
   const unselected = [];
 
-  for (const item of list) {
+  for (const item of baseList) {
     if (SELECTED_REWARD_ITEMS.has(item.item)) selected.push(item);
     else unselected.push(item);
   }
@@ -793,6 +800,19 @@ function renderCards(list) {
   }
 }
 
+function updateHideLowButton() {
+  const btn = $("btnHideLow");
+  if (!btn) return;
+
+  if (REWARD_VIEW_MODE === "alpha") {
+    btn.style.display = "";
+    btn.textContent = HIDE_LOW_PLAT_IN_ALPHA ? "Show all" : "Hide <5p";
+  } else {
+    btn.style.display = "";
+    btn.textContent = "Hide <5p";
+  }
+}
+
 function showRewards() {
   const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
 
@@ -812,11 +832,14 @@ function showRewards() {
 
   CURRENT_REWARDS = mergeAndSortRewards(relicsPicked);
   renderCards(CURRENT_REWARDS);
+  updateHideLowButton();
 
+  const displayed = getDisplayedRewards(CURRENT_REWARDS);
   const priced = CURRENT_REWARDS.filter(r => r.plat >= 0).length;
 
   if (REWARD_VIEW_MODE === "alpha") {
-    setStatus(`Showing ${CURRENT_REWARDS.length} unique rewards • A–Z mode • tap items to pin them to the top by platinum value`);
+    const hiddenText = HIDE_LOW_PLAT_IN_ALPHA ? " • hiding items under 5 plat" : "";
+    setStatus(`Showing ${displayed.length} rewards in A–Z mode${hiddenText} • tap items to pin them to the top by platinum value`);
   } else {
     setStatus(`Showing ${CURRENT_REWARDS.length} unique rewards • priced: ${priced}`);
   }
@@ -825,12 +848,19 @@ function showRewards() {
 function showRewardsPlatMode() {
   REWARD_VIEW_MODE = "plat";
   SELECTED_REWARD_ITEMS.clear();
+  HIDE_LOW_PLAT_IN_ALPHA = false;
   showRewards();
 }
 
 function showRewardsAlphaMode() {
   REWARD_VIEW_MODE = "alpha";
   SELECTED_REWARD_ITEMS.clear();
+  showRewards();
+}
+
+function toggleHideLowPlat() {
+  if (REWARD_VIEW_MODE !== "alpha") return;
+  HIDE_LOW_PLAT_IN_ALPHA = !HIDE_LOW_PLAT_IN_ALPHA;
   showRewards();
 }
 
@@ -890,12 +920,14 @@ async function boot() {
 
   $("btnShow")?.addEventListener("click", showRewardsPlatMode);
   $("btnAlpha")?.addEventListener("click", showRewardsAlphaMode);
+  $("btnHideLow")?.addEventListener("click", toggleHideLowPlat);
 
   $("btnClear")?.addEventListener("click", () => {
     state.r1 = state.r2 = state.r3 = state.r4 = null;
     REWARD_VIEW_MODE = "plat";
     CURRENT_REWARDS = [];
     SELECTED_REWARD_ITEMS.clear();
+    HIDE_LOW_PLAT_IN_ALPHA = false;
 
     ["r1Text", "r2Text", "r3Text", "r4Text"].forEach(id => {
       const el = $(id);
@@ -906,11 +938,13 @@ async function boot() {
     });
 
     if ($("cards")) $("cards").innerHTML = "";
+    updateHideLowButton();
     setStatus("Cleared");
   });
 
   showRelicControls();
   updateItemHint();
+  updateHideLowButton();
 
   setStatus("Ready");
 }
