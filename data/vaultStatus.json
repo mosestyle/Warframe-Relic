@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-10",
+  "generated_at": "2026-05-08",
   "available": {
     "Lith A1": true,
     "Lith A2": false,
@@ -750,6 +750,7 @@
     "Vanguard E1": false,
     "Vanguard M1": false,
     "Vanguard P1": false,
+    "Requiem ETERNA": false,
     "Requiem I": false,
     "Requiem II": false,
     "Requiem III": false,
