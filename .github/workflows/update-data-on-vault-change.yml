@@ -38,6 +38,16 @@ jobs:
           python scripts/update_vault_status.py
           test -f data/vaultStatus.json
 
+      - name: Write timestamp meta file
+        run: |
+          mkdir -p data
+          cat > data/meta.json <<EOF
+          {
+            "generated_at": "$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+          }
+          EOF
+          cat data/meta.json
+
       - name: Commit & push if changed
         run: |
           set -e
