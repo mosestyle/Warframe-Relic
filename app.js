@@ -1,23 +1,18 @@
-// app.js — Modal picker UI + prices from data/prices.json ONLY.
-
 let RELICS = [];
 let PRICES = {};
 let RELIC_NAMES = [];
 let VAULT = null;
+let META = null;
 
 const state = { r1: null, r2: null, r3: null, r4: null };
 const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 
 const $ = (id) => document.getElementById(id);
 
-// Save/restore scroll position for Items list
 let ITEM_LIST_SCROLL_TOP = 0;
-
-// Scanner instance
 let SCREEN_SCANNER = null;
 
-// Reward list view state
-let REWARD_VIEW_MODE = "plat"; // "plat" | "alpha"
+let REWARD_VIEW_MODE = "plat";
 let CURRENT_REWARDS = [];
 let SELECTED_REWARD_ITEMS = new Set();
 let HIDE_LOW_PLAT_IN_ALPHA = false;
@@ -35,21 +30,18 @@ function relicDisplayName(r) {
 
 function platForItem(itemName) {
   const v = PRICES[itemName];
-  return (typeof v === "number") ? v : null;
+  return typeof v === "number" ? v : null;
 }
 
 function rarityToLabel(r) {
   const val = Number(r);
   if (isNaN(val)) return "";
-
   const rounded = Math.round(val * 100) / 100;
-
   if (rounded <= 2.5) return `Rare (${rounded}%)`;
   if (rounded <= 15) return `Uncommon (${rounded}%)`;
   return `Common (${rounded}%)`;
 }
 
-// ---------------- Natural relic sorting ----------------
 const ERA_ORDER = { Lith: 0, Meso: 1, Neo: 2, Axi: 3 };
 
 function parseRelicName(str) {
@@ -84,7 +76,6 @@ function relicNaturalCompare(a, b) {
   return a.localeCompare(b);
 }
 
-// ---------------- Vault helpers ----------------
 function escapeHtml(s) {
   return String(s ?? "")
     .replaceAll("&", "&amp;")
@@ -104,6 +95,7 @@ function relicIsAvailable(relicName) {
 
   const v = VAULT[relicName];
   if (typeof v === "boolean") return v;
+
   if (v && typeof v === "object") {
     if (typeof v.available === "boolean") return v.available;
     if (typeof v.vaulted === "boolean") return !v.vaulted;
@@ -119,6 +111,7 @@ function relicDotHtml(relicName) {
     avail === true ? "relicDot available" :
     avail === false ? "relicDot vaulted" :
     "relicDot unknown";
+
   return `<span class="${cls}" aria-hidden="true"></span>`;
 }
 
@@ -129,6 +122,7 @@ function formatRelicNameSpan(relicName) {
     avail === true ? "relicName available" :
     avail === false ? "relicName vaulted" :
     "relicName";
+
   return `<span class="${cls}">${escapeHtml(clean)}</span>`;
 }
 
@@ -142,22 +136,23 @@ function formatFromRelicsHtml(fromStr) {
   return parts.map(p => formatRelicNameSpan(p)).join(", ");
 }
 
-// ---------------- Relics filter ----------------
 let RELIC_FILTER_MODE = "all";
 
 function countVaultStates() {
   let available = 0, vaulted = 0, unknown = 0;
+
   for (const name of RELIC_NAMES) {
     const v = relicIsAvailable(name);
     if (v === true) available++;
     else if (v === false) vaulted++;
     else unknown++;
   }
+
   return { available, vaulted, unknown, total: RELIC_NAMES.length };
 }
 
 function setRelicFilterMode(mode) {
-  RELIC_FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
+  RELIC_FILTER_MODE = mode === "available" || mode === "vaulted" ? mode : "all";
 
   $("rfAll")?.classList.toggle("active", RELIC_FILTER_MODE === "all");
   $("rfAvail")?.classList.toggle("active", RELIC_FILTER_MODE === "available");
@@ -186,10 +181,9 @@ function relicPassesFilter(relicName) {
   const avail = relicIsAvailable(relicName);
   if (avail === null) return false;
 
-  return (RELIC_FILTER_MODE === "available") ? (avail === true) : (avail === false);
+  return RELIC_FILTER_MODE === "available" ? avail === true : avail === false;
 }
 
-// ---------------- Item -> relic index ----------------
 let ITEM_TO_RELICS = null;
 
 function buildItemIndex() {
@@ -217,12 +211,14 @@ function buildItemIndex() {
   for (const info of map.values()) {
     const seen = new Set();
     const out = [];
+
     for (const e of info.relics) {
       const k = `${e.relicName}__${e.rarityLabel}`;
       if (seen.has(k)) continue;
       seen.add(k);
       out.push(e);
     }
+
     out.sort((a, b) => relicNaturalCompare(a.relicName, b.relicName));
     info.relics = out;
     info.plat = platForItem(info.displayName);
@@ -231,7 +227,6 @@ function buildItemIndex() {
   ITEM_TO_RELICS = map;
 }
 
-// ---------------- Scanner reward pool helpers ----------------
 function getCurrentRewardPool() {
   const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
   if (picks.length === 0) return [];
@@ -276,12 +271,10 @@ function initScreenScanner() {
   });
 }
 
-// ---------------- Modal picker + modes ----------------
 let modalTarget = null;
 let SEARCH_MODE = "relic";
 let ITEM_DETAIL = null;
 
-// Items mode controls
 let ITEM_TOP_MODE = false;
 let ITEM_FILTER_MODE = "all";
 
@@ -327,21 +320,20 @@ function setItemTopMode(enabled) {
   $("itemTopToggle")?.classList.toggle("active", ITEM_TOP_MODE);
   $("itemSegWrap")?.classList.toggle("hidden", !ITEM_TOP_MODE);
 
-  if (!ITEM_TOP_MODE) {
-    setItemFilterMode("all", false);
-  }
+  if (!ITEM_TOP_MODE) setItemFilterMode("all", false);
 
   ITEM_DETAIL = null;
   ITEM_LIST_SCROLL_TOP = 0;
 
   updateItemHint();
+
   if (SEARCH_MODE === "items") {
     renderModalList($("modalSearch")?.value || "");
   }
 }
 
 function setItemFilterMode(mode, rerender = true) {
-  ITEM_FILTER_MODE = (mode === "available" || mode === "vaulted") ? mode : "all";
+  ITEM_FILTER_MODE = mode === "available" || mode === "vaulted" ? mode : "all";
 
   $("ifAll")?.classList.toggle("active", ITEM_FILTER_MODE === "all");
   $("ifAvail")?.classList.toggle("active", ITEM_FILTER_MODE === "available");
@@ -351,13 +343,14 @@ function setItemFilterMode(mode, rerender = true) {
   ITEM_LIST_SCROLL_TOP = 0;
 
   updateItemHint();
+
   if (rerender && SEARCH_MODE === "items") {
     renderModalList($("modalSearch")?.value || "");
   }
 }
 
 function setSearchMode(mode) {
-  SEARCH_MODE = (mode === "items") ? "items" : "relic";
+  SEARCH_MODE = mode === "items" ? "items" : "relic";
   ITEM_DETAIL = null;
 
   setButtonsActive();
@@ -366,7 +359,7 @@ function setSearchMode(mode) {
   if (search) {
     search.value = "";
     search.placeholder =
-      (SEARCH_MODE === "items")
+      SEARCH_MODE === "items"
         ? "Search item: e.g. Wisp Prime Chassis Blueprint"
         : "Search: e.g. Meso C1 / Neo N16 / Axi S18";
   }
@@ -430,7 +423,6 @@ function pickRelic(relicName) {
   closeModal();
 }
 
-// ---------------- Items helpers ----------------
 function itemRelicsForFilter(info) {
   const relics = Array.isArray(info?.relics) ? info.relics : [];
   if (!ITEM_TOP_MODE || ITEM_FILTER_MODE === "all") return relics;
@@ -448,13 +440,12 @@ function itemPassesTopFilter(info) {
 }
 
 function itemSortByPlatThenName(a, b) {
-  const ap = (typeof a.plat === "number") ? a.plat : -1;
-  const bp = (typeof b.plat === "number") ? b.plat : -1;
+  const ap = typeof a.plat === "number" ? a.plat : -1;
+  const bp = typeof b.plat === "number" ? b.plat : -1;
   if (bp !== ap) return bp - ap;
   return a.displayName.localeCompare(b.displayName);
 }
 
-// ---------------- Detail view ----------------
 function renderItemDetailView() {
   const listEl = $("modalList");
   if (!listEl || !ITEM_DETAIL) return;
@@ -510,7 +501,6 @@ function renderItemDetailView() {
   }
 }
 
-// ---------------- Main modal render ----------------
 function renderModalList(filter, options = {}) {
   const listEl = $("modalList");
   if (!listEl) return;
@@ -523,20 +513,17 @@ function renderModalList(filter, options = {}) {
   const q = (filter || "").toLowerCase().trim();
   listEl.innerHTML = "";
 
-  // ITEMS MODE
   if (SEARCH_MODE === "items") {
     if (!ITEM_TO_RELICS) buildItemIndex();
 
     const allItems = [...ITEM_TO_RELICS.values()];
 
-    // TOP PLATINUM MODE
     if (ITEM_TOP_MODE) {
       let matches = allItems
         .filter(info => itemPassesTopFilter(info))
         .filter(info => !q || info.displayName.toLowerCase().includes(q));
 
       matches.sort(itemSortByPlatThenName);
-
       updateItemHint(matches.length);
 
       if (matches.length === 0) {
@@ -555,7 +542,7 @@ function renderModalList(filter, options = {}) {
           .map(e => formatRelicNameSpan(e.relicName))
           .join(" • ");
 
-        const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
+        const priceText = typeof info.plat === "number" ? `${info.plat} Plat` : "?";
 
         const row = document.createElement("div");
         row.className = "modalItem";
@@ -585,7 +572,6 @@ function renderModalList(filter, options = {}) {
       return;
     }
 
-    // NORMAL ITEMS SEARCH
     updateItemHint();
 
     if (!q) {
@@ -620,7 +606,7 @@ function renderModalList(filter, options = {}) {
         .map(e => formatRelicNameSpan(e.relicName))
         .join(" • ");
 
-      const priceText = (typeof info.plat === "number") ? `${info.plat} Plat` : "?";
+      const priceText = typeof info.plat === "number" ? `${info.plat} Plat` : "?";
 
       const row = document.createElement("div");
       row.className = "modalItem";
@@ -650,7 +636,6 @@ function renderModalList(filter, options = {}) {
     return;
   }
 
-  // RELICS MODE
   const base = q
     ? RELIC_NAMES.filter(n => n.toLowerCase().includes(q))
     : RELIC_NAMES;
@@ -676,7 +661,6 @@ function renderModalList(filter, options = {}) {
   listEl.scrollTop = 0;
 }
 
-// ---------------- Rewards render ----------------
 function mergeAndSortRewards(relicsPicked) {
   const all = [];
 
@@ -686,6 +670,7 @@ function mergeAndSortRewards(relicsPicked) {
       const item = d.item ?? d.name ?? d.reward ?? "Unknown";
       const rarity = rarityToLabel(d.rarity ?? d.chance ?? d.tier ?? "");
       const plat = platForItem(item);
+
       all.push({
         item,
         from: relicDisplayName(r),
@@ -696,8 +681,10 @@ function mergeAndSortRewards(relicsPicked) {
   }
 
   const merged = new Map();
+
   for (const e of all) {
     const prev = merged.get(e.item);
+
     if (!prev) {
       merged.set(e.item, { ...e, fromSet: new Set([e.from]) });
     } else {
@@ -734,7 +721,10 @@ function getDisplayedRewards(list) {
   }
 
   if (REWARD_VIEW_MODE === "plat") {
-    return baseList.sort((a, b) => b.plat - a.plat || a.item.localeCompare(b.item, undefined, { sensitivity: "base" }));
+    return baseList.sort((a, b) =>
+      b.plat - a.plat ||
+      a.item.localeCompare(b.item, undefined, { sensitivity: "base" })
+    );
   }
 
   const selected = [];
@@ -754,8 +744,11 @@ function getDisplayedRewards(list) {
 function toggleRewardSelection(itemName) {
   if (REWARD_VIEW_MODE !== "alpha") return;
 
-  if (SELECTED_REWARD_ITEMS.has(itemName)) SELECTED_REWARD_ITEMS.delete(itemName);
-  else SELECTED_REWARD_ITEMS.add(itemName);
+  if (SELECTED_REWARD_ITEMS.has(itemName)) {
+    SELECTED_REWARD_ITEMS.delete(itemName);
+  } else {
+    SELECTED_REWARD_ITEMS.add(itemName);
+  }
 
   renderCards(CURRENT_REWARDS);
 }
@@ -767,6 +760,7 @@ function renderCards(list) {
   const displayList = getDisplayedRewards(list);
 
   cardsEl.innerHTML = "";
+
   for (const e of displayList) {
     const div = document.createElement("div");
     const isSelected = SELECTED_REWARD_ITEMS.has(e.item);
@@ -805,10 +799,8 @@ function updateHideLowButton() {
   if (!btn) return;
 
   if (REWARD_VIEW_MODE === "alpha") {
-    btn.style.display = "";
     btn.textContent = HIDE_LOW_PLAT_IN_ALPHA ? "Show all" : "Hide <5p";
   } else {
-    btn.style.display = "";
     btn.textContent = "Hide <5p";
   }
 }
@@ -864,7 +856,6 @@ function toggleHideLowPlat() {
   showRewards();
 }
 
-// ---------------- Boot ----------------
 async function boot() {
   setStatus("Loading…");
 
@@ -885,13 +876,29 @@ async function boot() {
     VAULT = null;
   }
 
+  try {
+    const metaRes = await fetch("./data/meta.json", { cache: "no-store" });
+    META = await metaRes.json();
+  } catch {
+    META = null;
+  }
+
+  const lastUpdatedEl = $("lastUpdated");
+  if (lastUpdatedEl) {
+    lastUpdatedEl.textContent = META?.generated_at
+      ? `Last updated: ${META.generated_at}`
+      : "";
+  }
+
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
   buildItemIndex();
   initScreenScanner();
 
   const footer = $("footer");
-  if (footer) footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+  if (footer) {
+    footer.textContent = `Relics: ${RELICS.length} • Price entries: ${Object.keys(PRICES).length}`;
+  }
 
   $("modalClose")?.addEventListener("click", closeModal);
 
