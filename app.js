@@ -887,7 +887,13 @@ async function boot() {
   });
 
   $("btnShow")?.addEventListener("click", showRewardsPlatMode);
-  $("btnAlpha")?.addEventListener("click", showRewardsAlphaMode);
+  $("btnAlpha")?.addEventListener("click", () => {
+  if (REWARD_VIEW_MODE === "alpha") {
+    showRewardsPlatMode();
+  } else {
+    showRewardsAlphaMode();
+  }
+});
   $("btnHideLow")?.addEventListener("click", toggleHideLowPlat);
 
   $("btnClear")?.addEventListener("click", () => {
