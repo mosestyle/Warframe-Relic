@@ -672,7 +672,7 @@ function rewardSelectedCompare(a, b) {
 function getDisplayedRewards(list) {
   let baseList = [...list];
 
-  if (REWARD_VIEW_MODE === "alpha" && HIDE_LOW_PLAT_IN_ALPHA) {
+  if (HIDE_LOW_PLAT_IN_ALPHA) {
     baseList = baseList.filter(item => item.plat >= 5);
   }
 
@@ -750,15 +750,22 @@ function renderCards(list) {
   }
 }
 
-function updateHideLowButton() {
-  const btn = $("btnHideLow");
-  if (!btn) return;
+function updateRewardModeButtons() {
+  const alphaBtn = $("btnAlpha");
+  const hideLowBtn = $("btnHideLow");
 
-  if (REWARD_VIEW_MODE === "alpha") {
-    btn.textContent = HIDE_LOW_PLAT_IN_ALPHA ? "Show all" : "Hide <5p";
-  } else {
-    btn.textContent = "Hide <5p";
+  if (alphaBtn) {
+    alphaBtn.classList.toggle("active", REWARD_VIEW_MODE === "alpha");
   }
+
+  if (hideLowBtn) {
+    hideLowBtn.classList.toggle("active", HIDE_LOW_PLAT_IN_ALPHA);
+    hideLowBtn.textContent = HIDE_LOW_PLAT_IN_ALPHA ? "Show all" : "Hide <5p";
+  }
+}
+
+function updateHideLowButton() {
+  updateRewardModeButtons();
 }
 
 function showRewards() {
@@ -789,14 +796,14 @@ function showRewards() {
     const hiddenText = HIDE_LOW_PLAT_IN_ALPHA ? " • hiding items under 5 plat" : "";
     setStatus(`Showing ${displayed.length} rewards in A–Z mode${hiddenText} • tap items to pin them to the top by platinum value`);
   } else {
-    setStatus(`Showing ${CURRENT_REWARDS.length} unique rewards • priced: ${priced}`);
+    const hiddenText = HIDE_LOW_PLAT_IN_ALPHA ? ` • showing ${displayed.length} after hiding items under 5 plat` : "";
+    setStatus(`Showing ${CURRENT_REWARDS.length} unique rewards • priced: ${priced}${hiddenText}`);
   }
 }
 
 function showRewardsPlatMode() {
   REWARD_VIEW_MODE = "plat";
   SELECTED_REWARD_ITEMS.clear();
-  HIDE_LOW_PLAT_IN_ALPHA = false;
   showRewards();
 }
 
@@ -807,7 +814,6 @@ function showRewardsAlphaMode() {
 }
 
 function toggleHideLowPlat() {
-  if (REWARD_VIEW_MODE !== "alpha") return;
   HIDE_LOW_PLAT_IN_ALPHA = !HIDE_LOW_PLAT_IN_ALPHA;
   showRewards();
 }
