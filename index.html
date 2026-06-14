@@ -65,81 +65,6 @@
       <div id="cards"></div>
     </section>
 
-    <section class="scanSection" id="scanSection">
-      <div class="scanTop">
-        <div class="scanTitle">Scan reward screenshot</div>
-        <div class="muted small">
-          Upload a screenshot, take a photo, and scan with
-          <strong>Full mode</strong>, <strong>Tap mode</strong>, or <strong>Wide-box mode</strong>.
-          OCR will match only against the current possible rewards from your selected relics.
-        </div>
-      </div>
-
-      <div class="scanControls">
-        <button id="scanUploadBtn" type="button">Upload screenshot</button>
-        <button id="scanCameraBtn" type="button">Take photo</button>
-        <button id="scanClearBtn" class="ghost" type="button">Clear scan</button>
-
-        <div class="scanModeGroup">
-          <button id="scanModeFull" class="scanModeBtn active" type="button">Full mode</button>
-          <button id="scanModeTap" class="scanModeBtn" type="button">Tap mode</button>
-          <button id="scanModeWide" class="scanModeBtn" type="button">Wide-box mode</button>
-        </div>
-
-        <input id="scanFileInput" class="hidden" type="file" accept="image/*" />
-        <input id="scanCameraInput" class="hidden" type="file" accept="image/*" capture="environment" />
-      </div>
-
-      <div id="scanStatus" class="muted small scanStatus">
-        Pick relics, then upload a screenshot or take a photo.
-      </div>
-
-      <div class="scanStageWrap hidden" id="scanStageWrap">
-        <div class="scanHint muted small" id="scanHint">
-          Drag one box across the reward text row for Full mode.
-        </div>
-
-        <div class="scanStage crosshair" id="scanStage">
-          <canvas id="scanCanvas"></canvas>
-          <canvas id="scanOverlay"></canvas>
-        </div>
-      </div>
-
-      <div class="scanPreviewGrid hidden" id="scanPreviews">
-        <div class="scanPreviewCard">
-          <div class="scanPreviewLabel">Crop 1</div>
-          <img id="scanPreview1" alt="Crop 1 preview" />
-        </div>
-        <div class="scanPreviewCard">
-          <div class="scanPreviewLabel">Crop 2</div>
-          <img id="scanPreview2" alt="Crop 2 preview" />
-        </div>
-        <div class="scanPreviewCard">
-          <div class="scanPreviewLabel">Crop 3</div>
-          <img id="scanPreview3" alt="Crop 3 preview" />
-        </div>
-        <div class="scanPreviewCard">
-          <div class="scanPreviewLabel">Crop 4</div>
-          <img id="scanPreview4" alt="Crop 4 preview" />
-        </div>
-      </div>
-
-      <div class="scanActionsRow hidden" id="scanActionRow">
-        <button id="scanRunBtn" type="button">Analyze crops</button>
-      </div>
-
-      <div class="scannerResults hidden" id="scanResults"></div>
-
-      <details class="scannerDebug hidden" id="scanDebugWrap">
-        <summary>OCR debug</summary>
-        <pre id="scanDebugText"></pre>
-      </details>
-
-      <div class="scanActionsRow hidden" id="scanDebugActionRow">
-        <button id="scanCopyDebugBtn" class="ghost" type="button">Copy OCR debug</button>
-      </div>
-    </section>
-
     <footer class="muted small" id="footer"></footer>
   </main>
 
@@ -188,9 +113,6 @@
 
     <div id="modalList" class="modalList"></div>
   </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="scanner.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

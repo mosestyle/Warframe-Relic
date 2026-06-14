@@ -10,7 +10,6 @@ const PICKER_DEFAULT = "Tap to choose (Lith/Meso/Neo/Axi)";
 const $ = (id) => document.getElementById(id);
 
 let ITEM_LIST_SCROLL_TOP = 0;
-let SCREEN_SCANNER = null;
 
 let REWARD_VIEW_MODE = "plat";
 let CURRENT_REWARDS = [];
@@ -227,49 +226,6 @@ function buildItemIndex() {
   ITEM_TO_RELICS = map;
 }
 
-function getCurrentRewardPool() {
-  const picks = [state.r1, state.r2, state.r3, state.r4].filter(Boolean);
-  if (picks.length === 0) return [];
-
-  const relicsPicked = picks
-    .map(name => RELICS.find(r => relicDisplayName(r) === name))
-    .filter(Boolean);
-
-  if (relicsPicked.length === 0) return [];
-
-  return mergeAndSortRewards(relicsPicked).map(entry => ({
-    item: entry.item,
-    from: entry.from,
-    rarity: entry.rarity,
-    plat: entry.plat
-  }));
-}
-
-function initScreenScanner() {
-  if (typeof window.createScreenScanner !== "function") return;
-
-  SCREEN_SCANNER = window.createScreenScanner({
-    fileInputId: "scanFileInput",
-    uploadBtnId: "scanUploadBtn",
-    clearBtnId: "scanClearBtn",
-    modeTapId: "scanModeTap",
-    modeWideId: "scanModeWide",
-    stageWrapId: "scanStageWrap",
-    stageId: "scanStage",
-    canvasId: "scanCanvas",
-    overlayId: "scanOverlay",
-    hintId: "scanHint",
-    statusId: "scanStatus",
-    previewsWrapId: "scanPreviews",
-    previewIds: ["scanPreview1", "scanPreview2", "scanPreview3", "scanPreview4"],
-    runBtnId: "scanRunBtn",
-    actionRowId: "scanActionRow",
-    resultsId: "scanResults",
-    debugWrapId: "scanDebugWrap",
-    debugTextId: "scanDebugText",
-    getRewardPool: getCurrentRewardPool
-  });
-}
 
 let modalTarget = null;
 let SEARCH_MODE = "relic";
@@ -893,7 +849,6 @@ async function boot() {
   RELIC_NAMES = RELICS.map(relicDisplayName).sort(relicNaturalCompare);
 
   buildItemIndex();
-  initScreenScanner();
 
   const footer = $("footer");
   if (footer) {
