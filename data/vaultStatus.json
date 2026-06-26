@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-19",
+  "generated_at": "2026-06-26",
   "available": {
-    "Lith A1": false,
+    "Lith A1": true,
     "Lith A2": false,
     "Lith A3": false,
     "Lith A4": false,
@@ -555,7 +555,7 @@
     "Neo V8": false,
     "Neo V9": true,
     "Neo V10": false,
-    "Neo V11": true,
+    "Neo V11": false,
     "Neo W1": false,
     "Neo W2": false,
     "Neo X1": false,
