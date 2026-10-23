@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-25",
+  "generated_at": "2026-10-23",
   "available": {
     "Lith A1": false,
     "Lith A2": false,
@@ -639,6 +639,7 @@
     "Axi C10": false,
     "Axi C11": false,
     "Axi C12": true,
+    "Axi C13": true,
     "Axi D1": false,
     "Axi D2": false,
     "Axi D3": false,
